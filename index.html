@@ -39,11 +39,9 @@
     <!-- Evidence-based exercise database (used for substitutions) -->
     <script src="exercise-database.js"></script>
     <script src="utils-fixed.js"></script>
-    <!-- Firebase SDK (for Cloud Sync) -->
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-    <script src="firebase-sync.js"></script>
+    <!-- Supabase SDK (for Cloud Sync - No Credit Card Required!) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-sync.js"></script>
     <script type="text/babel">
         const { useState, useEffect } = React;
 
@@ -3526,11 +3524,11 @@ return sets;
                   {!config.syncUser ? (
                     <button
                       onClick={() => {
-                        if (typeof window.firebaseCloudSync === 'undefined') {
+                        if (typeof window.supabaseCloudSync === 'undefined') {
                           alert('Cloud sync is not configured yet. See FIREBASE_SETUP_GUIDE.md for instructions.');
                           return;
                         }
-                        window.firebaseCloudSync.signInWithGoogle();
+                        window.supabaseCloudSync.signInWithGoogle();
                       }}
                       className="w-full p-3 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold btn-touch flex items-center justify-center gap-2 transition"
                     >
@@ -3551,9 +3549,9 @@ return sets;
                       <div className="flex gap-2">
                         <button
                           onClick={() => {
-                            if (typeof window.firebaseCloudSync !== 'undefined' && config.syncUser) {
+                            if (typeof window.supabaseCloudSync !== 'undefined' && config.syncUser) {
                               setConfig(prev => ({ ...prev, syncing: true }));
-                              window.firebaseCloudSync.saveToCloud(config.syncUser.uid, { config, program, history })
+                              window.supabaseCloudSync.saveToCloud(config.syncUser.uid, { config, program, history })
                                 .then(() => {
                                   setConfig(prev => ({ ...prev, lastSync: 'Just now', syncing: false }));
                                   alert('✓ Synced to cloud!');
@@ -3573,8 +3571,8 @@ return sets;
                         <button
                           onClick={() => {
                             if (confirm('Sign out of cloud sync?')) {
-                              if (typeof window.firebaseCloudSync !== 'undefined') {
-                                window.firebaseCloudSync.signOut();
+                              if (typeof window.supabaseCloudSync !== 'undefined') {
+                                window.supabaseCloudSync.signOut();
                                 setConfig(prev => ({ ...prev, syncUser: null, lastSync: null }));
                               }
                             }
