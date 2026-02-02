@@ -3772,29 +3772,41 @@ return sets;
 
     async function pushToCloud() {
         const keys = Object.keys(localStorage);
-        if (keys.length === 0) return alert("No data found to sync.");
+        if (keys.length === 0) return alert("No data found on this device.");
         try {
             for (let key of keys) {
                 let val = localStorage.getItem(key);
                 let parsed;
+                // Attempt to parse as JSON, otherwise keep as string
                 try { parsed = JSON.parse(val); } catch (e) { parsed = val; }
-                await _supabase.from('user_data').upsert({ key_name: key, Content: parsed }, { onConflict: 'key_name' });
+                
+                await _supabase.from('user_data').upsert({ 
+                    key_name: key, 
+                    Content: parsed 
+                }, { onConflict: 'key_name' });
             }
-            alert("✅ Successfully saved to cloud!");
-        } catch (err) { alert("❌ Error: " + err.message); }
+            alert("✅ iPhone Data Saved! Now go to your PC and hit 'Load'.");
+        } catch (err) { alert("❌ Save Error: " + err.message); }
     }
 
     async function pullFromCloud() {
         try {
             const { data, error } = await _supabase.from('user_data').select('*');
             if (error) throw error;
+            if (!data || data.length === 0) return alert("Cloud is empty. Save from iPhone first!");
+
+            // 1. Clear current device memory to prevent conflicts
+            localStorage.clear();
+
+            // 2. Inject Cloud Data
             data.forEach(row => {
                 const val = (typeof row.Content === 'object') ? JSON.stringify(row.Content) : row.Content;
                 localStorage.setItem(row.key_name, val);
             });
-            alert("✅ Data Pulled! App reloading...");
-            window.location.reload();
-        } catch (err) { alert("❌ Error: " + err.message); }
+
+            // 3. Force a 'Hard Refresh' so React sees the new data
+            alert("✅ Data Loaded! The app will now restart with your workouts.");
+            window.location.href = window.location.origin + window.location.pathname + '?reload=' + Date.now();
+        } catch (err) { alert("❌ Load Error: " + err.message); }
     }
 </script>
-
