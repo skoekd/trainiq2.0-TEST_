@@ -9,6 +9,7 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link href="https://fonts.googleapis.com/css2?family=Antonio:wght@700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * { -webkit-tap-highlight-color: transparent; }
@@ -35,6 +36,10 @@
     </style>
 </head>
 <body>
+<div style="background:#111; padding:10px; display:flex; justify-content:center; gap:8px; position:sticky; top:0; z-index:10000; border-bottom:1px solid #444;">
+    <button onclick="pushToCloud()" style="background:#007bff; color:white; border:none; padding:8px 12px; border-radius:8px; font-weight:bold;">⬆️ Save to Cloud</button>
+    <button onclick="pullFromCloud()" style="background:#28a745; color:white; border:none; padding:8px 12px; border-radius:8px; font-weight:bold;">⬇️ Load to Device</button>
+</div>	
     <div id="root"></div>
     <!-- Evidence-based exercise database (used for substitutions) -->
     <script src="exercise-database.js"></script>
@@ -3760,3 +3765,36 @@ return sets;
     </script>
 </body>
 </html>
+<script>
+    const SB_URL = "https://mujacewgojnbgbtxovkw.supabase.co";
+    const SB_KEY = "sb_publishable_c8Uf9tUD-T4MKldrseZU3Q_u2pZEanO";
+    const _supabase = supabase.createClient(SB_URL, SB_KEY);
+
+    async function pushToCloud() {
+        const keys = Object.keys(localStorage);
+        if (keys.length === 0) return alert("No data found to sync.");
+        try {
+            for (let key of keys) {
+                let val = localStorage.getItem(key);
+                let parsed;
+                try { parsed = JSON.parse(val); } catch (e) { parsed = val; }
+                await _supabase.from('user_data').upsert({ key_name: key, Content: parsed }, { onConflict: 'key_name' });
+            }
+            alert("✅ Successfully saved to cloud!");
+        } catch (err) { alert("❌ Error: " + err.message); }
+    }
+
+    async function pullFromCloud() {
+        try {
+            const { data, error } = await _supabase.from('user_data').select('*');
+            if (error) throw error;
+            data.forEach(row => {
+                const val = (typeof row.Content === 'object') ? JSON.stringify(row.Content) : row.Content;
+                localStorage.setItem(row.key_name, val);
+            });
+            alert("✅ Data Pulled! App reloading...");
+            window.location.reload();
+        } catch (err) { alert("❌ Error: " + err.message); }
+    }
+</script>
+
