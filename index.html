@@ -2101,8 +2101,24 @@ return sets;
           },
           set(k, value) {
             try {
-              localStorage.setItem(storageKey(k), JSON.stringify(value));
-            } catch (e) {}
+              const key = storageKey(k);
+              const serialized = JSON.stringify(value);
+              
+              // Check size (warn if getting large)
+              const sizeKB = new Blob([serialized]).size / 1024;
+              if (sizeKB > 3000) {
+                console.warn(`Large storage item (${sizeKB.toFixed(0)}KB). Consider clearing old data.`);
+              }
+              
+              localStorage.setItem(key, serialized);
+            } catch (e) {
+              if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
+                console.error('Storage quota exceeded. Clear old programs in History tab.');
+                alert('Storage full! Please clear old programs in the History tab.');
+              } else {
+                console.error('Storage error:', e);
+              }
+            }
           },
           remove(k) {
             try { localStorage.removeItem(storageKey(k)); } catch (e) {}
@@ -2212,7 +2228,7 @@ return sets;
           const [history, setHistory] = useState([]);
           
           useEffect(() => {
-            const saved = safeLocalStorageGet('trainiq_state', null);
+            const saved = storage.get('state', null);
             if (saved) {
               const data = saved;
               if (data.config) {
@@ -2231,10 +2247,8 @@ return sets;
           }, []);
           
           useEffect(() => {
-            const result = safeLocalStorageSet('trainiq_state', { config, program, history });
-            if (!result.success && result.quotaExceeded) {
-              console.warn('Storage full! Please clear old programs in History tab.');
-            }
+            // Use the storage object which handles profile keys and has error handling
+            storage.set('state', { config, program, history });
           }, [config, program, history]);
 
           // ==================== HISTORY CSV IMPORT/EXPORT ====================

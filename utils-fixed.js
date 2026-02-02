@@ -494,7 +494,28 @@ function canSupersetImproved(exercise1, exercise2, programType) {
     return isAntagonist || (fatigue1 + fatigue2 <= 5);
 }
 
-// Export all functions (for modular use)
+// Make functions available globally for browser use
+// (They're already defined above, just need to be accessible)
+if (typeof window !== 'undefined') {
+    // Browser environment - attach to window
+    window.validateConfig = validateConfig;
+    window.calculateWeeklyVolume = calculateWeeklyVolume;
+    window.calculateWeeklyTargetsWithProgramType = calculateWeeklyTargetsWithProgramType;
+    window.calculateRIR = calculateRIR;
+    window.getPhaseParameters = getPhaseParameters;
+    window.applyDeload = applyDeload;
+    window.adjustRepRangeForProgram = adjustRepRangeForProgram;
+    window.calculateWeight = calculateWeight;
+    window.roundWeight = roundWeight;
+    window.generateWarmups = generateWarmups;
+    window.validateWeightProgression = validateWeightProgression;
+    window.safeLocalStorageSet = safeLocalStorageSet;
+    window.safeLocalStorageGet = safeLocalStorageGet;
+    window.canSupersetImproved = canSupersetImproved;
+    window.percentFromRepsToFailure = percentFromRepsToFailure;
+}
+
+// Export for Node.js modules (if needed)
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         validateConfig,
