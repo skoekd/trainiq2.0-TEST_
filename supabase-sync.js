@@ -7,8 +7,8 @@
 // 3. Get your project URL and anon key from Settings > API
 // 4. Replace the values below:
 
-const SUPABASE_URL = 'YOUR_SUPABASE_URL_HERE';  // e.g., https://xxxxx.supabase.co
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY_HERE';
+const SUPABASE_URL = 'https://mujacewgojnbgbtxovkw.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11amFjZXdnb2puYmdidHhvdmt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5OTk4NDMsImV4cCI6MjA4NTU3NTg0M30.ed6BEfgZqhgK9SZ78SxPxdCXbb0U9O8JZg5xGQBBe34';
 
 // Initialize Supabase client
 let supabaseClient = null;
@@ -29,7 +29,7 @@ try {
 // Push current data to cloud
 async function pushToCloud() {
     if (!supabaseClient) {
-        alert('⚠️ Cloud sync not configured.\n\nTo enable:\n1. Create free Supabase account at supabase.com\n2. Get your project URL and key\n3. Update supabase-sync.js with your credentials');
+        alert('⚠️ Cloud sync not configured.\n\nSupabase connection failed. Check console for details.');
         return;
     }
 
@@ -48,15 +48,16 @@ async function pushToCloud() {
 
         const state = JSON.parse(stateData);
         
-        // Save to Supabase
+        // Save to Supabase using YOUR existing table structure (user_data)
+        // key_name = profile_id, Content = state data
         const { data, error } = await supabaseClient
-            .from('trainiq_data')
+            .from('user_data')
             .upsert({
-                profile_id: profileId,
-                state_data: state,
-                updated_at: new Date().toISOString()
+                key_name: `trainiq:${profileId}`,
+                Content: state,
+                created_at: new Date().toISOString()
             }, {
-                onConflict: 'profile_id'
+                onConflict: 'key_name'
             });
 
         if (error) throw error;
@@ -73,7 +74,7 @@ async function pushToCloud() {
 // Pull data from cloud to device
 async function pullFromCloud() {
     if (!supabaseClient) {
-        alert('⚠️ Cloud sync not configured.\n\nTo enable:\n1. Create free Supabase account at supabase.com\n2. Get your project URL and key\n3. Update supabase-sync.js with your credentials');
+        alert('⚠️ Cloud sync not configured.\n\nSupabase connection failed. Check console for details.');
         return;
     }
 
@@ -85,11 +86,11 @@ async function pullFromCloud() {
         // Get profile ID from URL hash
         const profileId = getProfileIdFromHash();
         
-        // Fetch from Supabase
+        // Fetch from Supabase using YOUR existing table structure
         const { data, error } = await supabaseClient
-            .from('trainiq_data')
-            .select('state_data, updated_at')
-            .eq('profile_id', profileId)
+            .from('user_data')
+            .select('Content, created_at')
+            .eq('key_name', `trainiq:${profileId}`)
             .single();
 
         if (error) {
@@ -101,16 +102,16 @@ async function pullFromCloud() {
             return;
         }
 
-        if (!data || !data.state_data) {
+        if (!data || !data.Content) {
             alert('❌ No cloud data available.');
             return;
         }
 
         // Save to localStorage
         const stateKey = `trainiq:${profileId}:state`;
-        localStorage.setItem(stateKey, JSON.stringify(data.state_data));
+        localStorage.setItem(stateKey, JSON.stringify(data.Content));
 
-        const lastUpdated = new Date(data.updated_at).toLocaleString();
+        const lastUpdated = new Date(data.created_at).toLocaleString();
         alert(`✅ Loaded from cloud successfully!\n\nLast updated: ${lastUpdated}\n\nReloading app...`);
         
         // Reload to show new data
