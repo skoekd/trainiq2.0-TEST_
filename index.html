@@ -3766,13 +3766,13 @@ return sets;
 </body>
 </html>
 <script>
-	// Line 3768: Your original React render call
+// Line 3768: Your original React render call
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
 
-    <script id="supabase-sync-logic">
-        // Safety check: only create the client if it doesn't exist to avoid SyntaxErrors
+    <script id="cloud-sync-logic">
+        // This check prevents the 'already declared' error shown in your console
         if (typeof _supabase === 'undefined') {
             var SB_URL = "https://mujacewgojnbgbtxovkw.supabase.co";
             var SB_KEY = "sb_publishable_c8Uf9tUD-T4MKldrseZU3Q_u2pZEanO";
@@ -3782,8 +3782,11 @@ return sets;
         async function pushToCloud() {
             try {
                 const keys = Object.keys(localStorage);
-                const profileHash = window.location.hash; // This is the #/u/... ID
-                if (!profileHash) return alert("❌ No Profile ID found in your URL. Please refresh the page.");
+                const profileHash = window.location.hash; // Captures the #/u/ ID
+                
+                if (!profileHash || profileHash.length < 5) {
+                    return alert("❌ No Profile ID found in URL. Please refresh the page first.");
+                }
 
                 for (let key of keys) {
                     let val = localStorage.getItem(key);
@@ -3796,20 +3799,20 @@ return sets;
                         profile_id: profileHash 
                     }, { onConflict: 'key_name' });
                 }
-                alert("✅ iPhone Data Saved! The Profile ID is now linked in Supabase.");
+                alert("✅ iPhone Data Saved! Your Profile ID is now linked in the cloud.");
             } catch (err) { alert("❌ Save Error: " + err.message); }
         }
 
         async function pullFromCloud() {
             try {
                 const { data, error } = await _supabase.from('user_data').select('*');
-                if (error || !data) throw error;
+                if (error || !data || data.length === 0) return alert("Cloud is empty!");
 
-                // This looks for the workouts that have your iPhone's ID attached
+                // Look for the row that has your iPhone's #/u/ identity
                 const identityRow = data.find(r => r.profile_id && r.profile_id.includes('#/u/'));
                 
                 if (!identityRow) {
-                    return alert("❌ No linked data found. You MUST tap 'Save' on your iPhone first!");
+                    return alert("❌ Profile ID mismatch. You MUST tap 'Save to Cloud' on your iPhone first!");
                 }
 
                 localStorage.clear();
@@ -3818,11 +3821,11 @@ return sets;
                     localStorage.setItem(row.key_name, val);
                 });
 
-                // Force the computer to adopt the iPhone's Identity
+                // Force the identity into the computer's memory
                 const rawId = identityRow.profile_id.split('/u/')[1];
                 localStorage.setItem('trainiq-current-profile-id', rawId);
 
-                alert("✅ Profile Found! Syncing your workouts...");
+                alert("✅ Sync Success! Reloading your workouts...");
                 window.location.hash = identityRow.profile_id;
                 window.location.reload(true);
             } catch (err) { alert("❌ Load Error: " + err.message); }
