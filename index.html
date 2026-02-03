@@ -3766,28 +3766,37 @@ return sets;
 </body>
 </html>
 <script>
-        // This check prevents the 'already declared' error you see in your console
+	// Line 3768: Your original React render call
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+
+    <script id="supabase-sync-logic">
+        // Safety check: only create the client if it doesn't exist to avoid SyntaxErrors
         if (typeof _supabase === 'undefined') {
-            const SB_URL = "https://mujacewgojnbgbtxovkw.supabase.co";
-            const SB_KEY = "sb_publishable_c8Uf9tUD-T4MKldrseZU3Q_u2pZEanO";
+            var SB_URL = "https://mujacewgojnbgbtxovkw.supabase.co";
+            var SB_KEY = "sb_publishable_c8Uf9tUD-T4MKldrseZU3Q_u2pZEanO";
             var _supabase = supabase.createClient(SB_URL, SB_KEY);
         }
 
         async function pushToCloud() {
             try {
                 const keys = Object.keys(localStorage);
-                const profileHash = window.location.hash;
+                const profileHash = window.location.hash; // This is the #/u/... ID
+                if (!profileHash) return alert("❌ No Profile ID found in your URL. Please refresh the page.");
+
                 for (let key of keys) {
                     let val = localStorage.getItem(key);
                     let parsed;
                     try { parsed = JSON.parse(val); } catch (e) { parsed = val; }
+                    
                     await _supabase.from('user_data').upsert({ 
                         key_name: key, 
                         Content: parsed,
                         profile_id: profileHash 
                     }, { onConflict: 'key_name' });
                 }
-                alert("✅ iPhone Data Saved!");
+                alert("✅ iPhone Data Saved! The Profile ID is now linked in Supabase.");
             } catch (err) { alert("❌ Save Error: " + err.message); }
         }
 
@@ -3796,11 +3805,11 @@ return sets;
                 const { data, error } = await _supabase.from('user_data').select('*');
                 if (error || !data) throw error;
 
-                // Find the row that contains your iPhone's profile link
+                // This looks for the workouts that have your iPhone's ID attached
                 const identityRow = data.find(r => r.profile_id && r.profile_id.includes('#/u/'));
                 
                 if (!identityRow) {
-                    return alert("❌ Still No Profile found in Cloud. Please hit 'Save' on your iPhone first!");
+                    return alert("❌ No linked data found. You MUST tap 'Save' on your iPhone first!");
                 }
 
                 localStorage.clear();
@@ -3809,13 +3818,15 @@ return sets;
                     localStorage.setItem(row.key_name, val);
                 });
 
-                // Force the ID into React's memory
+                // Force the computer to adopt the iPhone's Identity
                 const rawId = identityRow.profile_id.split('/u/')[1];
                 localStorage.setItem('trainiq-current-profile-id', rawId);
 
-                alert("✅ Success! App reloading...");
-                window.location.hash = identityRow.profile_id.substring(identityRow.profile_id.indexOf('#'));
+                alert("✅ Profile Found! Syncing your workouts...");
+                window.location.hash = identityRow.profile_id;
                 window.location.reload(true);
             } catch (err) { alert("❌ Load Error: " + err.message); }
         }
     </script>
+</body>
+</html>
