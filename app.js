@@ -454,7 +454,9 @@ function calcMainLiftWeight(oneRM, repsRange, rir, experience, programType, role
         Hypertrophy: -0.01,
         Strength: 0.02,
         Powerbuilding: 0.01,
-        Minimalist: 0.00
+        Minimalist: 0.00,
+        'Power / Speed-Strength': 0.03,
+        'German Volume Training (GVT)': -0.05
     };
     pct += ((_c = programAdj[programType]) !== null && _c !== void 0 ? _c : 0);
     // Experience: be slightly more conservative for beginners.
@@ -473,7 +475,54 @@ function calcMainLiftWeight(oneRM, repsRange, rir, experience, programType, role
     // Role adjustment
     if (role === 'secondary')
         pct -= 0.03;
-    pct = clamp(pct, 0.30, 0.95);
+    
+    // ========================================
+    // FIX #1: ENFORCE INTENSITY ZONES (Evidence-Based)
+    // ========================================
+    const phaseName = (phase === null || phase === void 0 ? void 0 : phase.phase) || 'Base';
+    const isMainOrSecondary = role === 'main' || role === 'secondary';
+    
+    // STRENGTH PROGRAMS: Must be >85% for Peak phase mains (Prilepin's Table)
+    if (programType === 'Strength' || programType === 'Power / Speed-Strength') {
+        if (phaseName === 'Peak' && isMainOrSecondary) {
+            if (pct < 0.85) {
+                console.warn('⚠️ Strength Peak intensity enforced: ' + Math.round(pct * 100) + '% → 87%');
+                pct = 0.87;
+            }
+        } else if (phaseName === 'Intensification' && isMainOrSecondary) {
+            if (pct < 0.75) pct = 0.77;
+        } else if (phaseName === 'Base' && isMainOrSecondary) {
+            if (pct < 0.70) pct = 0.72;
+        }
+    }
+    
+    // HYPERTROPHY PROGRAMS: 60-85% 1RM sweet spot (Schoenfeld et al., 2017)
+    if (programType === 'Hypertrophy' || programType.includes('GVT') || 
+        programType === 'Specialization (Body-Part Focus)') {
+        if (isMainOrSecondary) {
+            if (pct > 0.85) {
+                console.warn('⚠️ Hypertrophy intensity capped: ' + Math.round(pct * 100) + '% → 82%');
+                pct = 0.82;
+            }
+            if (pct < 0.60) {
+                console.warn('⚠️ Hypertrophy intensity enforced: ' + Math.round(pct * 100) + '% → 65%');
+                pct = 0.65;
+            }
+        }
+    }
+    
+    // POWERBUILDING: Hybrid zones
+    if (programType === 'Powerbuilding') {
+        const dayIntent = (phase === null || phase === void 0 ? void 0 : phase.dayIntent) || 'mixed';
+        if (dayIntent === 'strength' && isMainOrSecondary) {
+            if (pct < 0.80) pct = 0.82;
+        } else if (dayIntent === 'hypertrophy' && isMainOrSecondary) {
+            if (pct > 0.80) pct = 0.77;
+            if (pct < 0.65) pct = 0.67;
+        }
+    }
+    
+    pct = clamp(pct, 0.40, 0.95);
     return roundWeight(oneRM * pct);
 }
 function getPhaseParams(week) {
@@ -515,6 +564,17 @@ function getPhaseParams(week) {
 // - Minimalist: moderate reps, conservative fatigue
 function getRepRange(programType, exType, position, role = 'accessory', phaseName = 'Base', dayIntent = null) {
     const bump = (r) => (position === 0 ? r : [r[0] + 2, r[1] + 3]);
+    
+    // ========================================
+    // FIX #8: GVT 10×10 REP PROTOCOL
+    // ========================================
+    if (programType === 'German Volume Training (GVT)') {
+        if (role === 'main' && exType === 'compound') {
+            return [10, 10]; // ALWAYS 10 reps for main compounds
+        }
+        return [15, 20]; // Accessories: higher rep
+    }
+    
     // ---------------- Strength ----------------
     if (programType === 'Strength') {
         const isMainish = (role === 'main' || role === 'secondary');
@@ -669,7 +729,59 @@ function applyAdvancedTechniques(exercises, cfg, phaseName, dayIntent) {
         return { ...ex, technique: tech };
     });
 }
-function getRest(minRep, exType, programType) {
+function getRest(minRep, exType, programType, role) {
+    // ========================================
+    // FIX #3: EVIDENCE-BASED REST PERIODS
+    // ========================================
+    role = role || 'accessory';
+    
+    // STRENGTH PROGRAMS (3-5min for CNS recovery)
+    if (programType === 'Strength' || programType === 'Power / Speed-Strength') {
+        if (role === 'main' || role === 'secondary') {
+            return '3-5min';
+        }
+        if (minRep <= 6 && exType === 'compound') {
+            return '2-3min';
+        }
+        return '90-120s';
+    }
+    
+    // HYPERTROPHY PROGRAMS (2-3min for compounds - Schoenfeld 2016)
+    if (programType === 'Hypertrophy' || programType.includes('GVT') || 
+        programType === 'Specialization (Body-Part Focus)') {
+        if (exType === 'compound') {
+            if (minRep <= 8) {
+                return '2-3min'; // Heavier compounds need adequate rest
+            }
+            return '90-120s'; // Moderate compounds
+        }
+        return '60-90s'; // Isolation
+    }
+    
+    // POWERBUILDING (Hybrid)
+    if (programType === 'Powerbuilding') {
+        if (role === 'main') return '3-5min';
+        if (exType === 'compound') return '2-3min';
+        return '90s';
+    }
+    
+    // DENSITY/EDT (Short rest by design)
+    if (programType === 'Density (EDT-style)') {
+        return '30-60s';
+    }
+    
+    // GPP/CONDITIONING (Metabolic focus)
+    if (programType === 'GPP / Conditioning-Integrated') {
+        return '45-90s';
+    }
+    
+    // MINIMALIST (Efficient but adequate)
+    if (programType === 'Minimalist') {
+        if (exType === 'compound') return '2-3min';
+        return '90s';
+    }
+    
+    // DEFAULT FALLBACK
     if (minRep <= 6 && exType === 'compound') {
         return programType === 'Strength' ? '3-5min' : '2-4min';
     }
@@ -1412,6 +1524,18 @@ function generateProgram(config) {
     }
     function defaultSetsForRole(exRole, exType, wRamp, dayIntent = null) {
         var _a, _b;
+        
+        // ========================================
+        // FIX #8: GVT 10×10 PROTOCOL
+        // ========================================
+        if (programType === 'German Volume Training (GVT)') {
+            if (exRole === 'main' && exType === 'compound') {
+                return 10; // ALWAYS 10 sets for main compounds
+            }
+            if (exRole === 'accessory') return 2;
+            return 3;
+        }
+        
         // Baseline sets by experience and role.
         const base = {
             Beginner: { compound: 3, isolation: 2 },
@@ -1441,8 +1565,10 @@ function generateProgram(config) {
         else {
             sets = Math.max(1, Math.round(sets * wRamp.volMult));
         }
-        if (wRamp.deload)
-            sets = Math.max(1, Math.round(sets * 0.7));
+        // Deload: use floor for conservative volume
+        if (wRamp.deload) {
+            sets = Math.max(1, Math.floor(sets * 0.7)); // FIX: Floor instead of round for consistent deloads
+        }
         return sets;
     }
     function buildDayExerciseList(dayType, weekTargets, wRamp, timeCapMin, phaseName = 'Base', weekUsedIds = new Set()) {
