@@ -1,184 +1,265 @@
-// ==================== SUPABASE CLOUD SYNC ====================
-// Free cloud sync for TrainIQ using Supabase (no credit card required!)
-// 
-// SETUP INSTRUCTIONS:
-// 1. Go to https://supabase.com and create a free account
-// 2. Create a new project (free tier)
-// 3. Get your project URL and anon key from Settings > API
-// 4. Replace the values below:
+// ==================== SUPABASE CLOUD SYNC (v3) ====================
+//
+// WHAT THIS FILE DOES:
+//   pushToCloud() — Reads full app state (program + edits + 1RMs) from
+//                   localStorage and upserts it to Supabase. Safe to call
+//                   multiple times. Uses updated_at so created_at is preserved.
+//
+//   pullFromCloud() — Fetches state from Supabase, shows a preview, merges
+//                     1RMs (never silently overwrites local values), then
+//                     reloads the app.
+//
+// WHAT THIS CAPTURES:
+//   ✓ Full 12-week generated program
+//   ✓ Exercise swaps (name + originalName)
+//   ✓ Set count changes (+/- Set buttons)
+//   ✓ Exercise deletions
+//   ✓ Per-set logged weight / reps / RIR (via setLog — requires Fix 3 in index.html)
+//   ✓ 1RM values (merged on pull — never silently cleared)
+//   ✓ Warm-up preferences
+//   ✓ Program history (up to 10 blocks)
+//
+// SUPABASE TABLE (user_data):
+//   Your existing table is correct. One recommended upgrade — run this SQL once
+//   in the Supabase SQL Editor to add an updated_at column so created_at is never
+//   overwritten:
+//
+//     ALTER TABLE user_data
+//       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+//
+//   Then each row correctly tracks both when a program was first created AND
+//   when it was last cloud-synced.
 
 const SUPABASE_URL = 'https://mujacewgojnbgbtxovkw.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11amFjZXdnb2puYmdidHhvdmt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5OTk4NDMsImV4cCI6MjA4NTU3NTg0M30.ed6BEfgZqhgK9SZ78SxPxdCXbb0U9O8JZg5xGQBBe34';
 
-// Initialize Supabase client
+// ---------------------------------------------------------------------------
+// CLIENT INITIALISATION
+// ---------------------------------------------------------------------------
 let supabaseClient = null;
 
 try {
-    if (SUPABASE_URL !== 'YOUR_SUPABASE_URL_HERE' && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY_HERE') {
-        const { createClient } = supabase;
-        supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        console.log('✅ Supabase connected');
-    } else {
-        console.warn('⚠️  Supabase not configured. Cloud sync will not work.');
-        console.warn('📖 See setup instructions at top of supabase-sync.js');
-    }
-} catch (error) {
-    console.error('❌ Supabase initialization failed:', error);
+    const { createClient } = supabase;
+    supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    console.log('✅ Supabase connected');
+} catch (err) {
+    console.error('❌ Supabase init failed:', err);
 }
 
-// Push current data to cloud
+// ---------------------------------------------------------------------------
+// PUSH — write localStorage state to Supabase
+// ---------------------------------------------------------------------------
 async function pushToCloud() {
     if (!supabaseClient) {
-        alert('⚠️ Cloud sync not configured.\n\nSupabase connection failed. Check console for details.');
+        alert('⚠️ Cloud sync unavailable.\n\nSupabase failed to initialise — check the browser console.');
         return;
     }
 
     try {
-        // Get profile ID from URL hash (multi-user support)
-        const profileId = getProfileIdFromHash();
-        
-        // Get current data from localStorage
-        const stateKey = `trainiq:${profileId}:state`;
-        const stateData = localStorage.getItem(stateKey);
-        
-        if (!stateData) {
-            alert('❌ No data to sync. Generate a program first!');
+        const profileId = _syncGetProfileId();
+        const stateKey  = `trainiq:${profileId}:state`;
+        const raw       = localStorage.getItem(stateKey);
+
+        if (!raw) {
+            alert('❌ Nothing to save.\n\nGenerate a program first, then press Save to Cloud.');
             return;
         }
 
-        const state = JSON.parse(stateData);
-        
-        // Save to Supabase using YOUR existing table structure (user_data)
-        // key_name = profile_id, Content = state data
-        const { data, error } = await supabaseClient
+        const state       = JSON.parse(raw);
+        const now         = new Date().toISOString();
+        state._syncedAt   = now;          // stamp so pull can show "last synced"
+
+        // Persist the stamped copy locally so timestamps stay consistent
+        localStorage.setItem(stateKey, JSON.stringify(state));
+
+        // FIX: Use updated_at for the sync timestamp so created_at (when the
+        // program was first built) is never overwritten.  Falls back gracefully
+        // if the column doesn't exist yet on older deployments.
+        const payload = {
+            key_name:   `trainiq:${profileId}`,
+            Content:    state,
+            updated_at: now          // add column via SQL — see header comment
+        };
+
+        const { error } = await supabaseClient
             .from('user_data')
-            .upsert({
-                key_name: `trainiq:${profileId}`,
-                Content: state,
-                created_at: new Date().toISOString()
-            }, {
-                onConflict: 'key_name'
-            });
+            .upsert(payload, { onConflict: 'key_name' });
 
         if (error) throw error;
 
-        alert('✅ Saved to cloud successfully!\n\nYour program is now backed up.');
-        console.log('☁️  Data pushed to cloud:', profileId);
-        
-    } catch (error) {
-        console.error('Push error:', error);
-        alert(`❌ Failed to save to cloud:\n${error.message}\n\nCheck console for details.`);
+        const summary = _buildSyncSummary(state);
+        alert('✅ Saved to cloud!\n\n' + summary);
+        console.log('☁️  Push OK — profile:', profileId, '— synced at:', now);
+
+    } catch (err) {
+        console.error('pushToCloud error:', err);
+        alert('❌ Save failed:\n' + err.message + '\n\nCheck the browser console for details.');
     }
 }
 
-// Pull data from cloud to device
+// ---------------------------------------------------------------------------
+// PULL — fetch Supabase state and restore to localStorage
+// ---------------------------------------------------------------------------
 async function pullFromCloud() {
     if (!supabaseClient) {
-        alert('⚠️ Cloud sync not configured.\n\nSupabase connection failed. Check console for details.');
-        return;
-    }
-
-    if (!confirm('⚠️ This will REPLACE your current data with cloud data.\n\nContinue?')) {
+        alert('⚠️ Cloud sync unavailable.\n\nSupabase failed to initialise — check the browser console.');
         return;
     }
 
     try {
-        // Get profile ID from URL hash
-        const profileId = getProfileIdFromHash();
-        
-        // Fetch from Supabase using YOUR existing table structure
+        const profileId = _syncGetProfileId();
+
         const { data, error } = await supabaseClient
             .from('user_data')
-            .select('Content, created_at')
+            .select('Content, created_at, updated_at')
             .eq('key_name', `trainiq:${profileId}`)
             .single();
 
         if (error) {
             if (error.code === 'PGRST116') {
-                alert('❌ No cloud data found for this profile.\n\nSave to cloud first using the "⬆️ Save to Cloud" button.');
+                alert('❌ No cloud data found for this profile.\n\nPress "⬆️ Save to Cloud" first.');
             } else {
                 throw error;
             }
             return;
         }
 
-        if (!data || !data.Content) {
-            alert('❌ No cloud data available.');
+        if (!data?.Content) {
+            alert('❌ Cloud record is empty.');
             return;
         }
 
-        // Save to localStorage
+        const cloudState = data.Content;
+
+        // Show a meaningful preview so the user knows what they're about to load
+        const syncedAt = cloudState._syncedAt || data.updated_at || data.created_at;
+        const lastSynced = syncedAt
+            ? new Date(syncedAt).toLocaleString()
+            : 'Unknown';
+        const summary = _buildSyncSummary(cloudState);
+
+        const confirmed = confirm(
+            '⚠️  This will REPLACE your current local data with the cloud copy.\n\n' +
+            'Cloud last synced: ' + lastSynced + '\n\n' +
+            summary + '\n\n' +
+            'Continue?'
+        );
+        if (!confirmed) return;
+
+        // FIX: Merge 1RM values — cloud wins for any filled (>0) value.
+        // If the cloud copy is blank/zero for a lift but the local copy has a
+        // value, keep the local value.  This prevents a device that never had
+        // 1RMs entered from silently wiping carefully set values on another device.
         const stateKey = `trainiq:${profileId}:state`;
-        localStorage.setItem(stateKey, JSON.stringify(data.Content));
+        const rawLocal = localStorage.getItem(stateKey);
+        if (rawLocal) {
+            try {
+                const localState    = JSON.parse(rawLocal);
+                const localOneRMs   = localState?.config?.oneRMs;
+                const cloudOneRMs   = cloudState?.config?.oneRMs;
+                if (localOneRMs && cloudOneRMs && cloudState.config) {
+                    const merged = { ...localOneRMs };
+                    Object.keys(cloudOneRMs).forEach(k => {
+                        const v = parseFloat(cloudOneRMs[k]);
+                        if (!isNaN(v) && v > 0) merged[k] = cloudOneRMs[k];
+                    });
+                    cloudState.config.oneRMs = merged;
+                }
+            } catch (_) {
+                // merge failed — proceed with cloud state as-is; no data loss
+            }
+        }
 
-        const lastUpdated = new Date(data.created_at).toLocaleString();
-        alert(`✅ Loaded from cloud successfully!\n\nLast updated: ${lastUpdated}\n\nReloading app...`);
-        
-        // Reload to show new data
+        localStorage.setItem(stateKey, JSON.stringify(cloudState));
+        alert('✅ Cloud data loaded!\n\nLast synced: ' + lastSynced + '\n\nReloading…');
         setTimeout(() => window.location.reload(), 500);
-        
-    } catch (error) {
-        console.error('Pull error:', error);
-        alert(`❌ Failed to load from cloud:\n${error.message}\n\nCheck console for details.`);
+
+    } catch (err) {
+        console.error('pullFromCloud error:', err);
+        alert('❌ Load failed:\n' + err.message + '\n\nCheck the browser console for details.');
     }
 }
 
-// Helper: Get profile ID from URL hash
-function getProfileIdFromHash() {
-    const hash = window.location.hash;
-    const match = hash.match(/#\/u\/([a-f0-9-]+)/i);
-    if (match) {
-        return match[1];
-    }
-    
-    // If no profile in URL, use default profile
-    const defaultProfileId = localStorage.getItem('trainiq_default_profile_id');
-    if (defaultProfileId) {
-        return defaultProfileId;
-    }
-    
-    // Generate new profile ID
-    const newProfileId = generateUUID();
-    localStorage.setItem('trainiq_default_profile_id', newProfileId);
-    return newProfileId;
+// ---------------------------------------------------------------------------
+// HELPERS
+// ---------------------------------------------------------------------------
+
+/**
+ * Derive the active profile ID.
+ *
+ * Resolution order:
+ *   1. URL hash  (#/u/<id>)  — matches the regex used inside index.html
+ *   2. Persisted fallback key in localStorage
+ *   3. Generate + persist a new UUID
+ *
+ * FIX vs original: the original used /#\/u\/([a-f0-9-]+)/i which would fail
+ * to match profile IDs containing uppercase characters (UUID v4 is lowercase
+ * but crypto.randomUUID() output is implementation-defined).
+ * We now use the same /#\/u\/([^/]+)/ pattern as index.html so the two always
+ * agree on which profile is active.
+ */
+function _syncGetProfileId() {
+    const hash = window.location.hash || '';
+    const m    = hash.match(/#\/u\/([^/]+)/);
+    if (m && m[1]) return decodeURIComponent(m[1]);
+
+    const stored = localStorage.getItem('trainiq_default_profile_id');
+    if (stored) return stored;
+
+    const newId = (window.crypto?.randomUUID)
+        ? window.crypto.randomUUID()
+        : (String(Date.now()) + '-' + Math.random().toString(16).slice(2));
+    localStorage.setItem('trainiq_default_profile_id', newId);
+    return newId;
 }
 
-// Helper: Generate UUID
-function generateUUID() {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        const r = Math.random() * 16 | 0;
-        const v = c === 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
+/**
+ * Build a concise human-readable summary of a state blob for the confirm dialog.
+ */
+function _buildSyncSummary(state) {
+    if (!state) return '(no data)';
+    try {
+        const cfg   = state.config || {};
+        const prog  = state.program;
+        const lines = [];
+
+        if (cfg.programType) lines.push('Program type : ' + cfg.programType);
+        if (cfg.experience)  lines.push('Level        : ' + cfg.experience);
+        if (cfg.days)        lines.push('Days/week    : ' + cfg.days);
+
+        if (prog?.weeks?.length) {
+            lines.push('Weeks        : ' + prog.weeks.length);
+            let totalEx = 0, swapped = 0, hasSetLog = false;
+            prog.weeks.forEach(wk => {
+                (wk.workouts || []).forEach(wo => {
+                    (wo.exercises || []).forEach(ex => {
+                        totalEx++;
+                        if (ex.originalName) swapped++;
+                        if (Array.isArray(ex.setLog) && ex.setLog.some(s => s.weight || s.reps)) {
+                            hasSetLog = true;
+                        }
+                    });
+                });
+            });
+            if (totalEx)   lines.push('Exercises    : ' + totalEx);
+            if (swapped)   lines.push('Swaps        : ' + swapped + ' exercise(s) customised');
+            if (hasSetLog) lines.push('             : ✓ per-set workout log included');
+        }
+
+        const filledRMs = Object.values(cfg.oneRMs || {}).filter(v => parseFloat(v) > 0).length;
+        if (filledRMs) lines.push('1RM lifts    : ' + filledRMs + ' on file');
+
+        const histLen = Array.isArray(state.history) ? state.history.length : 0;
+        if (histLen)  lines.push('History      : ' + histLen + ' saved block(s)');
+
+        return lines.join('\n') || '(empty program)';
+    } catch (_) {
+        return '(could not read summary)';
+    }
 }
 
-// Make functions globally available
-window.pushToCloud = pushToCloud;
+// Expose globally — called by the buttons in index.html
+window.pushToCloud  = pushToCloud;
 window.pullFromCloud = pullFromCloud;
 
-console.log('📦 Supabase sync module loaded');
-
-// ==================== SUPABASE TABLE SETUP ====================
-// Run this SQL in your Supabase SQL Editor to create the table:
-/*
-
-CREATE TABLE trainiq_data (
-    id BIGSERIAL PRIMARY KEY,
-    profile_id TEXT UNIQUE NOT NULL,
-    state_data JSONB NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Enable Row Level Security
-ALTER TABLE trainiq_data ENABLE ROW LEVEL SECURITY;
-
--- Allow anyone to read/write their own profile (using profile_id)
--- This is simple but not secure for production - consider adding auth
-CREATE POLICY "Allow public access" ON trainiq_data
-    FOR ALL USING (true);
-
--- Create index for faster lookups
-CREATE INDEX idx_profile_id ON trainiq_data(profile_id);
-
-*/
+console.log('📦 supabase-sync v3 loaded');

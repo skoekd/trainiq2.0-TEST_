@@ -765,12 +765,11 @@ function calcMainLiftWeight(oneRM, repsRange, rir, experience, programType, role
           if (programType === 'Density (EDT-style)') {
             // Submaximal, driven by density not failure
             return 2;
-                    if (programType === 'GPP / Conditioning-Integrated') {
+          }
+          if (programType === 'GPP / Conditioning-Integrated') {
             // Conditioning-integrated: stay submaximal
             return 3;
           }
-
-}
 
           // Base effort by training age
           const base = {
@@ -817,12 +816,11 @@ function calcMainLiftWeight(oneRM, repsRange, rir, experience, programType, role
           if (programType === 'Power / Speed-Strength') {
             if (exType === 'compound') return '3-6min';
             return '2-3min';
-                    if (programType === 'GPP / Conditioning-Integrated') {
+          }
+          if (programType === 'GPP / Conditioning-Integrated') {
             if (exType === 'compound') return '60-120s';
             return '30-75s';
           }
-
-}
 
 
           if (minRep <= 6 && exType === 'compound') {
@@ -2820,6 +2818,8 @@ return sets;
                 ...current,
                 name: chosen.name,
                 originalName,
+                // Reset per-set log so old weights don't bleed onto a different exercise
+                setLog: Array.from({ length: current.sets || 1 }, () => ({ weight: '', reps: '', rir: '' })),
                 // Keep stimulus tags available for future features
                 tags: getExerciseTags(chosen.name) || current.tags || null
               };
@@ -2877,9 +2877,26 @@ return sets;
               // Main/secondary: keep at least 1 set; accessories: at least 1 set.
               const next = Math.max(1, Math.min(10, (parseInt(ex.sets, 10) || 1) + delta));
               const out = prev.slice();
-              const updated = { ...ex, sets: next };
+              // Resize setLog to match new set count, preserving existing entries
+              const oldLog = Array.isArray(ex.setLog) ? ex.setLog : [];
+              const newLog = Array.from({ length: next }, (_, i) => oldLog[i] || { weight: '', reps: '', rir: '' });
+              const updated = { ...ex, sets: next, setLog: newLog };
               updated.warmups = recomputeWarmups(updated);
               out[index] = updated;
+              return commit(out);
+            });
+          };
+
+          // Update a single field in a single set's log entry
+          const updateSetLog = (exIndex, setIdx, field, value) => {
+            setExercises(prev => {
+              if (!Array.isArray(prev) || !prev[exIndex]) return prev;
+              const ex = prev[exIndex];
+              const oldLog = Array.isArray(ex.setLog) ? ex.setLog : Array.from({ length: ex.sets || 1 }, () => ({ weight: '', reps: '', rir: '' }));
+              const newLog = oldLog.slice();
+              newLog[setIdx] = { ...newLog[setIdx], [field]: value };
+              const out = prev.slice();
+              out[exIndex] = { ...ex, setLog: newLog };
               return commit(out);
             });
           };
@@ -2911,6 +2928,10 @@ return sets;
 
   const ExerciseCard = ({ ex, index, showRest = true, ssOrder = null, canSwap = true }) => {
     const role = roleLabel(ex.role);
+    // Ensure setLog always has enough entries for the current set count
+    const setLog = Array.isArray(ex.setLog) && ex.setLog.length === ex.sets
+      ? ex.setLog
+      : Array.from({ length: ex.sets }, (_, i) => (ex.setLog && ex.setLog[i]) || { weight: '', reps: '', rir: '' });
     return (
       <div className="p-3 rounded-lg bg-black/50 border border-white/5">
         <div className="flex items-start justify-between gap-2 mb-2">
@@ -3022,24 +3043,33 @@ return sets;
         )}
 
         <div className="space-y-2">
-          {Array.from({length: ex.sets}).map((_, setIdx) => (
+          {Array.from({length: ex.sets}).map((_, setIdx) => {
+            const log = setLog[setIdx] || { weight: '', reps: '', rir: '' };
+            return (
             <div key={setIdx} className="flex items-center gap-2 p-2 rounded bg-black/30">
               <span className="text-xs font-bold text-gray-500 w-12">Set {setIdx + 1}</span>
               <div className="flex flex-col items-center w-20 sm:w-24">
                 {ex.weight && <div className="text-[10px] font-bold text-green-400 -mb-1">~{ex.weight}</div>}
                 <input type="number" placeholder="lbs"
-                className="w-full p-2 rounded bg-black/50 border border-white/10 text-white text-sm text-center outline-none focus:border-orange-500"
-              />
+                  value={log.weight}
+                  onChange={(e) => updateSetLog(index, setIdx, 'weight', e.target.value)}
+                  className="w-full p-2 rounded bg-black/50 border border-white/10 text-white text-sm text-center outline-none focus:border-orange-500"
+                />
               </div>
               <span className="text-xs text-gray-600">×</span>
               <input type="number" placeholder="reps"
+                value={log.reps}
+                onChange={(e) => updateSetLog(index, setIdx, 'reps', e.target.value)}
                 className="w-20 sm:w-24 p-2 rounded bg-black/50 border border-white/10 text-white text-sm text-center outline-none focus:border-orange-500"
               />
               <input type="number" placeholder="RIR" min="0" max="6"
+                value={log.rir}
+                onChange={(e) => updateSetLog(index, setIdx, 'rir', e.target.value)}
                 className="w-16 p-2 rounded bg-black/50 border border-white/10 text-white text-sm text-center outline-none focus:border-orange-500"
               />
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
