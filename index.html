@@ -2758,16 +2758,23 @@ return sets;
         function WorkoutCard({ workout, warmupPrefs, onUpdateExercises }) {
           const [open, setOpen] = useState(false);
           // Keep a local copy so swaps don't mutate the generated program state.
-          // IMPORTANT: this must resync whenever "workout" changes (week switch, regen, etc.)
-          // or else the "Change" button will only work for the first rendered card due to stale state.
           const [exercises, setExercises] = useState(() => (workout.exercises || []).map(ex => ({ ...ex })));
 	          const [swapState, setSwapState] = useState({ open: false, index: null, options: [], title: '', anchor: null });
 
+          // Stable identity key: recompute only when week/day or exercise structure changes.
+          // Deliberately excludes setLog fields so typing never invalidates the memo.
+          const workoutIdentityKey = React.useMemo(() => {
+            const exs = workout.exercises || [];
+            return `${workout.dayNumber}|${exs.map(e => `${e?.name}:${e?.sets}`).join(',')}`;
+          // eslint-disable-next-line react-hooks/exhaustive-deps
+          }, [workout.dayNumber, workout.exercises?.length,
+              // Include exercise names/sets as a flat string so regen is detected
+              (workout.exercises || []).map(e => `${e?.name}:${e?.sets}`).join(',')]);
+
           useEffect(() => {
             setExercises((workout.exercises || []).map(ex => ({ ...ex })));
-            // Close any open chooser when switching workouts to avoid index mismatch.
             setSwapState({ open: false, index: null, options: [], title: '', anchor: null });
-          }, [workout]);
+          }, [workoutIdentityKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
 	          const openSwap = (ex, index, evt) => {
 	            const opts = getAlternativesForExercise(ex.originalName || ex.name, { role: ex.role || 'accessory' });
@@ -2887,7 +2894,10 @@ return sets;
             });
           };
 
-          // Update a single field in a single set's log entry
+          // Update a single field in a single set's log entry.
+          // IMPORTANT: does NOT call commit() — typing must never trigger a root
+          // setProgram() call because that would re-render WorkoutCard and kill keyboard focus.
+          // Persistence to program state happens in flushSetLog (onBlur).
           const updateSetLog = (exIndex, setIdx, field, value) => {
             setExercises(prev => {
               if (!Array.isArray(prev) || !prev[exIndex]) return prev;
@@ -2897,7 +2907,16 @@ return sets;
               newLog[setIdx] = { ...newLog[setIdx], [field]: value };
               const out = prev.slice();
               out[exIndex] = { ...ex, setLog: newLog };
-              return commit(out);
+              return out; // local only — no commit()
+            });
+          };
+
+          // Called onBlur: flush the current local exercises to program state so
+          // SAVE / cloud sync / history always have the latest logged values.
+          const flushSetLog = () => {
+            setExercises(prev => {
+              if (typeof onUpdateExercises === 'function') onUpdateExercises(prev);
+              return prev;
             });
           };
           
@@ -3047,25 +3066,46 @@ return sets;
             const log = setLog[setIdx] || { weight: '', reps: '', rir: '' };
             return (
             <div key={setIdx} className="flex items-center gap-2 p-2 rounded bg-black/30">
-              <span className="text-xs font-bold text-gray-500 w-12">Set {setIdx + 1}</span>
-              <div className="flex flex-col items-center w-20 sm:w-24">
+              <span className="text-xs font-bold text-gray-500 w-12 flex-shrink-0">Set {setIdx + 1}</span>
+              <div className="flex flex-col items-center flex-1 min-w-0">
                 {ex.weight && <div className="text-[10px] font-bold text-green-400 -mb-1">~{ex.weight}</div>}
-                <input type="number" placeholder="lbs"
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  pattern="[0-9]*\.?[0-9]*"
+                  placeholder="lbs"
+                  autoComplete="off"
+                  enterKeyHint="next"
                   value={log.weight}
                   onChange={(e) => updateSetLog(index, setIdx, 'weight', e.target.value)}
-                  className="w-full p-2 rounded bg-black/50 border border-white/10 text-white text-sm text-center outline-none focus:border-orange-500"
+                  onBlur={flushSetLog}
+                  className="w-full min-h-[44px] px-2 py-2 rounded bg-black/50 border border-white/10 text-white text-sm text-center outline-none focus:border-orange-500 focus:bg-black/70"
                 />
               </div>
-              <span className="text-xs text-gray-600">×</span>
-              <input type="number" placeholder="reps"
+              <span className="text-xs text-gray-600 flex-shrink-0">×</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder="reps"
+                autoComplete="off"
+                enterKeyHint="next"
                 value={log.reps}
                 onChange={(e) => updateSetLog(index, setIdx, 'reps', e.target.value)}
-                className="w-20 sm:w-24 p-2 rounded bg-black/50 border border-white/10 text-white text-sm text-center outline-none focus:border-orange-500"
+                onBlur={flushSetLog}
+                className="flex-1 min-w-0 min-h-[44px] px-2 py-2 rounded bg-black/50 border border-white/10 text-white text-sm text-center outline-none focus:border-orange-500 focus:bg-black/70"
               />
-              <input type="number" placeholder="RIR" min="0" max="6"
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder="RIR"
+                autoComplete="off"
+                enterKeyHint="done"
                 value={log.rir}
                 onChange={(e) => updateSetLog(index, setIdx, 'rir', e.target.value)}
-                className="w-16 p-2 rounded bg-black/50 border border-white/10 text-white text-sm text-center outline-none focus:border-orange-500"
+                onBlur={flushSetLog}
+                className="w-14 flex-shrink-0 min-h-[44px] px-2 py-2 rounded bg-black/50 border border-white/10 text-white text-sm text-center outline-none focus:border-orange-500 focus:bg-black/70"
               />
             </div>
             );
