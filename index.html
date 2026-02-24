@@ -2753,6 +2753,182 @@ return sets;
           );
         }
 
+        // ==================== EXERCISE CARD ====================
+        // CRITICAL: defined HERE at module level, outside WorkoutCard.
+        // Previously this was defined inside an IIFE in WorkoutCard's render,
+        // which meant React saw a brand-new component type on every render,
+        // causing full unmount/remount of all inputs and destroying keyboard focus.
+
+        function _roleLabel(role) {
+          if (role === 'main') return { text: 'MAIN LIFT', cls: 'bg-orange-500/20 text-orange-300' };
+          if (role === 'secondary') return { text: 'SECONDARY LIFT', cls: 'bg-blue-500/20 text-blue-300' };
+          return { text: 'ACCESSORY', cls: 'bg-gray-500/20 text-gray-300' };
+        }
+
+        function ExerciseCard({ ex, index, showRest, ssOrder, canSwap,
+                                 onOpenSwap, onAdjustSets, onDeleteExercise,
+                                 onUpdateSetLog, onFlushSetLog }) {
+          showRest  = showRest  !== false;
+          canSwap   = canSwap   !== false;
+          const role = _roleLabel(ex.role);
+          // Ensure setLog always has enough entries for the current set count
+          const setLog = Array.isArray(ex.setLog) && ex.setLog.length === ex.sets
+            ? ex.setLog
+            : Array.from({ length: ex.sets }, (_, i) => (ex.setLog && ex.setLog[i]) || { weight: '', reps: '', rir: '' });
+          return (
+            <div className="p-3 rounded-lg bg-black/50 border border-white/5">
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="font-semibold text-sm">{ex.name}</h4>
+                    {canSwap && (
+                      <button
+                        onClick={(e) => onOpenSwap(ex, index, e)}
+                        className={(ex.role === 'main' || ex.role === 'secondary'
+                          ? 'text-orange-200 border-orange-500/35 hover:bg-orange-500/10 '
+                          : 'text-gray-200 border-white/15 hover:bg-white/10 ') +
+                          'px-2 py-1 rounded-md border bg-white/5 text-[11px] font-bold btn-touch'}
+                        title="Choose a similar alternate exercise"
+                      >
+                        Change
+                      </button>
+                    )}
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onAdjustSets(index, -1); }}
+                        className="px-2 py-1 rounded-md border border-white/15 bg-white/5 text-[11px] font-bold text-gray-200 hover:bg-white/10 btn-touch"
+                        title="Remove 1 set"
+                      >− Set</button>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onAdjustSets(index, +1); }}
+                        className="px-2 py-1 rounded-md border border-white/15 bg-white/5 text-[11px] font-bold text-gray-200 hover:bg-white/10 btn-touch"
+                        title="Add 1 set"
+                      >+ Set</button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (confirm(`Delete "${ex.name}" from this workout?`)) onDeleteExercise(index);
+                        }}
+                        className="px-2 py-1 rounded-md border border-red-500/25 bg-red-500/10 text-[11px] font-bold text-red-300 hover:bg-red-500/20 btn-touch"
+                        title="Delete exercise"
+                      >Delete</button>
+                    </div>
+                  </div>
+                  {ex.originalName && (
+                    <div className="text-[11px] text-gray-500 mt-0.5">
+                      Original: <span className="text-gray-300 font-semibold">{ex.originalName}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {ssOrder && (
+                    <span className="px-2 py-1 bg-purple-500/25 text-purple-200 rounded font-bold text-[11px]">
+                      {ssOrder}
+                    </span>
+                  )}
+                  <span className={`px-2 py-1 rounded font-bold text-[11px] ${role.cls}`}>{role.text}</span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 text-xs mb-3">
+                <span className="px-2 py-1 bg-orange-500/20 text-orange-400 rounded font-bold">
+                  <span className="opacity-75 font-extrabold tracking-wider mr-1">SETS</span>
+                  {ex.sets} × {ex.reps[0]}-{ex.reps[1]}
+                </span>
+                {showRest && (
+                  <span className="px-2 py-1 bg-purple-500/20 text-purple-400 rounded font-bold">
+                    <span className="opacity-75 font-extrabold tracking-wider mr-1">REST</span>
+                    {ex.rest}
+                  </span>
+                )}
+                <span className="px-2 py-1 bg-red-500/20 text-red-400 rounded font-bold">
+                  <span className="opacity-75 font-extrabold tracking-wider mr-1">EFFORT</span>
+                  {ex.rir} RIR
+                </span>
+              </div>
+
+              <div className="text-[11px] text-gray-500 mb-3 -mt-1">
+                Target effort: finish each set with about <span className="font-bold text-gray-300">{ex.rir}</span> reps in reserve (RIR).
+              </div>
+
+              {Array.isArray(ex.warmups) && ex.warmups.length > 0 && (
+                <div className="mb-3">
+                  <div className="text-xs font-extrabold tracking-wider text-gray-400 mb-1">WARM-UP SETS</div>
+                  <div className="space-y-1">
+                    {ex.warmups.map((ws, i) => (
+                      <div key={i} className="flex items-center gap-2 p-2 rounded bg-black/20">
+                        <span className="text-xs font-bold text-gray-500 w-12">WU {i + 1}</span>
+                        <span className="text-xs font-bold text-gray-200 w-16">{ws.reps} reps</span>
+                        {ws.pct != null ? (
+                          <span className="text-xs text-gray-400">~{ws.pct}%</span>
+                        ) : (
+                          <span className="text-xs text-gray-400">{ws.note || 'easy'}</span>
+                        )}
+                        {ws.weight && <span className="text-xs font-extrabold text-green-400 ml-auto">~{ws.weight}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {Array.from({ length: ex.sets }).map((_, setIdx) => {
+                  const log = setLog[setIdx] || { weight: '', reps: '', rir: '' };
+                  return (
+                    <div key={setIdx} className="flex items-center gap-2 p-2 rounded bg-black/30">
+                      <span className="text-xs font-bold text-gray-500 w-12 flex-shrink-0">Set {setIdx + 1}</span>
+                      <div className="flex flex-col items-center flex-1 min-w-0">
+                        {ex.weight && <div className="text-[10px] font-bold text-green-400 -mb-1">~{ex.weight}</div>}
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          pattern="[0-9]*\.?[0-9]*"
+                          placeholder="lbs"
+                          autoComplete="off"
+                          enterKeyHint="next"
+                          value={log.weight}
+                          onChange={(e) => onUpdateSetLog(index, setIdx, 'weight', e.target.value)}
+                          onBlur={onFlushSetLog}
+                          className="w-full min-h-[44px] px-2 py-2 rounded bg-black/50 border border-white/10 text-white text-sm text-center outline-none focus:border-orange-500 focus:bg-black/70"
+                        />
+                      </div>
+                      <span className="text-xs text-gray-600 flex-shrink-0">×</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        placeholder="reps"
+                        autoComplete="off"
+                        enterKeyHint="next"
+                        value={log.reps}
+                        onChange={(e) => onUpdateSetLog(index, setIdx, 'reps', e.target.value)}
+                        onBlur={onFlushSetLog}
+                        className="flex-1 min-w-0 min-h-[44px] px-2 py-2 rounded bg-black/50 border border-white/10 text-white text-sm text-center outline-none focus:border-orange-500 focus:bg-black/70"
+                      />
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        placeholder="RIR"
+                        autoComplete="off"
+                        enterKeyHint="done"
+                        value={log.rir}
+                        onChange={(e) => onUpdateSetLog(index, setIdx, 'rir', e.target.value)}
+                        onBlur={onFlushSetLog}
+                        className="w-14 flex-shrink-0 min-h-[44px] px-2 py-2 rounded bg-black/50 border border-white/10 text-white text-sm text-center outline-none focus:border-orange-500 focus:bg-black/70"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        }
+
         // ==================== WORKOUT CARD ====================
         
         function WorkoutCard({ workout, warmupPrefs, onUpdateExercises }) {
@@ -2939,239 +3115,62 @@ return sets;
               {open && (
                 <div className="px-4 pb-4 space-y-2">
                   {(() => {
-  const roleLabel = (role) => {
-    if (role === 'main') return { text: 'MAIN LIFT', cls: 'bg-orange-500/20 text-orange-300' };
-    if (role === 'secondary') return { text: 'SECONDARY LIFT', cls: 'bg-blue-500/20 text-blue-300' };
-    return { text: 'ACCESSORY', cls: 'bg-gray-500/20 text-gray-300' };
-  };
+                    const items = [];
+                    const exs = exercises || [];
+                    for (let i = 0; i < exs.length; i++) {
+                      const ex = exs[i];
+                      if (!ex) continue;
+                      if (ex.superset && ex.superset.position === 2) continue;
 
-  const ExerciseCard = ({ ex, index, showRest = true, ssOrder = null, canSwap = true }) => {
-    const role = roleLabel(ex.role);
-    // Ensure setLog always has enough entries for the current set count
-    const setLog = Array.isArray(ex.setLog) && ex.setLog.length === ex.sets
-      ? ex.setLog
-      : Array.from({ length: ex.sets }, (_, i) => (ex.setLog && ex.setLog[i]) || { weight: '', reps: '', rir: '' });
-    return (
-      <div className="p-3 rounded-lg bg-black/50 border border-white/5">
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h4 className="font-semibold text-sm">{ex.name}</h4>
-              {canSwap && (
-	                <button
-	                  onClick={(e) => openSwap(ex, index, e)}
-                  className={(ex.role === 'main' || ex.role === 'secondary'
-                    ? 'text-orange-200 border-orange-500/35 hover:bg-orange-500/10 '
-                    : 'text-gray-200 border-white/15 hover:bg-white/10 ') +
-                    'px-2 py-1 rounded-md border bg-white/5 text-[11px] font-bold btn-touch'}
-                  title="Choose a similar alternate exercise"
-                >
-                  Change
-                </button>
-              )}
+                      const cardProps = {
+                        onOpenSwap: openSwap,
+                        onAdjustSets: adjustSets,
+                        onDeleteExercise: deleteExercise,
+                        onUpdateSetLog: updateSetLog,
+                        onFlushSetLog: flushSetLog,
+                      };
 
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); adjustSets(index, -1); }}
-                  className="px-2 py-1 rounded-md border border-white/15 bg-white/5 text-[11px] font-bold text-gray-200 hover:bg-white/10 btn-touch"
-                  title="Remove 1 set"
-                >
-                  − Set
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); adjustSets(index, +1); }}
-                  className="px-2 py-1 rounded-md border border-white/15 bg-white/5 text-[11px] font-bold text-gray-200 hover:bg-white/10 btn-touch"
-                  title="Add 1 set"
-                >
-                  + Set
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (confirm(`Delete “${ex.name}” from this workout?`)) deleteExercise(index);
-                  }}
-                  className="px-2 py-1 rounded-md border border-red-500/25 bg-red-500/10 text-[11px] font-bold text-red-300 hover:bg-red-500/20 btn-touch"
-                  title="Delete exercise"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-            {ex.originalName && (
-              <div className="text-[11px] text-gray-500 mt-0.5">
-                Original: <span className="text-gray-300 font-semibold">{ex.originalName}</span>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5">
-            {ssOrder && (
-              <span className="px-2 py-1 bg-purple-500/25 text-purple-200 rounded font-bold text-[11px]">
-                {ssOrder}
-              </span>
-            )}
-            <span className={`px-2 py-1 rounded font-bold text-[11px] ${role.cls}`}>{role.text}</span>
-          </div>
-        </div>
+                      if (ex.superset && ex.superset.position === 1) {
+                        const group = ex.superset.group;
+                        const partner = exs[i + 1];
+                        const hasPartner = partner && partner.superset && partner.superset.group === group;
+                        const between = ex.superset.betweenRest || '0-30s';
+                        const post = ex.superset.postRest || '60-120s';
+                        items.push(
+                          <div key={`ss-${group}-${i}`} className="p-3 rounded-xl bg-black/40 border border-white/10">
+                            <div className="flex flex-col gap-1 mb-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="text-xs font-bold tracking-widest text-purple-200">SUPERSET {group}</div>
+                                <span className="px-2 py-1 bg-purple-500/20 text-purple-300 rounded font-bold text-[11px]">
+                                  No rest (or {between}) between
+                                </span>
+                              </div>
+                              {hasPartner ? (
+                                <div className="text-xs text-gray-300">
+                                  Do <span className="font-bold text-white">{ex.name}</span> → <span className="font-bold text-white">{partner.name}</span>, then rest <span className="font-bold text-white">{post}</span>.
+                                </div>
+                              ) : (
+                                <div className="text-xs text-gray-400">
+                                  Superset enabled, but partner exercise not found for this group.
+                                </div>
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              <ExerciseCard key={`ex-${i}`} ex={ex} index={i} showRest={false} ssOrder={`${group}1`} {...cardProps} />
+                              {hasPartner && <ExerciseCard key={`ex-${i+1}`} ex={partner} index={i+1} showRest={false} ssOrder={`${group}2`} {...cardProps} />}
+                            </div>
+                            <div className="mt-2 text-xs text-gray-400">
+                              Rest <span className="font-bold text-gray-200">{post}</span> after completing both exercises.
+                            </div>
+                          </div>
+                        );
+                        continue;
+                      }
 
-        <div className="flex flex-wrap gap-1.5 text-xs mb-3">
-          <span className="px-2 py-1 bg-orange-500/20 text-orange-400 rounded font-bold">
-            <span className="opacity-75 font-extrabold tracking-wider mr-1">SETS</span>
-            {ex.sets} × {ex.reps[0]}-{ex.reps[1]}
-          </span>
-
-          {showRest && (
-            <span className="px-2 py-1 bg-purple-500/20 text-purple-400 rounded font-bold">
-              <span className="opacity-75 font-extrabold tracking-wider mr-1">REST</span>
-              {ex.rest}
-            </span>
-          )}
-
-          <span className="px-2 py-1 bg-red-500/20 text-red-400 rounded font-bold">
-            <span className="opacity-75 font-extrabold tracking-wider mr-1">EFFORT</span>
-            {ex.rir} RIR
-          </span>
-        </div>
-
-        <div className="text-[11px] text-gray-500 mb-3 -mt-1">
-          Target effort: finish each set with about <span className="font-bold text-gray-300">{ex.rir}</span> reps in reserve (RIR).
-        </div>
-
-
-        {Array.isArray(ex.warmups) && ex.warmups.length > 0 && (
-          <div className="mb-3">
-            <div className="text-xs font-extrabold tracking-wider text-gray-400 mb-1">WARM-UP SETS</div>
-            <div className="space-y-1">
-              {ex.warmups.map((ws, i) => (
-                <div key={i} className="flex items-center gap-2 p-2 rounded bg-black/20">
-                  <span className="text-xs font-bold text-gray-500 w-12">WU {i + 1}</span>
-                  <span className="text-xs font-bold text-gray-200 w-16">{ws.reps} reps</span>
-                  {ws.pct != null ? (
-                    <span className="text-xs text-gray-400">~{ws.pct}%</span>
-                  ) : (
-                    <span className="text-xs text-gray-400">{ws.note || 'easy'}</span>
-                  )}
-                  {ws.weight && <span className="text-xs font-extrabold text-green-400 ml-auto">~{ws.weight}</span>}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-2">
-          {Array.from({length: ex.sets}).map((_, setIdx) => {
-            const log = setLog[setIdx] || { weight: '', reps: '', rir: '' };
-            return (
-            <div key={setIdx} className="flex items-center gap-2 p-2 rounded bg-black/30">
-              <span className="text-xs font-bold text-gray-500 w-12 flex-shrink-0">Set {setIdx + 1}</span>
-              <div className="flex flex-col items-center flex-1 min-w-0">
-                {ex.weight && <div className="text-[10px] font-bold text-green-400 -mb-1">~{ex.weight}</div>}
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  pattern="[0-9]*\.?[0-9]*"
-                  placeholder="lbs"
-                  autoComplete="off"
-                  enterKeyHint="next"
-                  value={log.weight}
-                  onChange={(e) => updateSetLog(index, setIdx, 'weight', e.target.value)}
-                  onBlur={flushSetLog}
-                  className="w-full min-h-[44px] px-2 py-2 rounded bg-black/50 border border-white/10 text-white text-sm text-center outline-none focus:border-orange-500 focus:bg-black/70"
-                />
-              </div>
-              <span className="text-xs text-gray-600 flex-shrink-0">×</span>
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                placeholder="reps"
-                autoComplete="off"
-                enterKeyHint="next"
-                value={log.reps}
-                onChange={(e) => updateSetLog(index, setIdx, 'reps', e.target.value)}
-                onBlur={flushSetLog}
-                className="flex-1 min-w-0 min-h-[44px] px-2 py-2 rounded bg-black/50 border border-white/10 text-white text-sm text-center outline-none focus:border-orange-500 focus:bg-black/70"
-              />
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                placeholder="RIR"
-                autoComplete="off"
-                enterKeyHint="done"
-                value={log.rir}
-                onChange={(e) => updateSetLog(index, setIdx, 'rir', e.target.value)}
-                onBlur={flushSetLog}
-                className="w-14 flex-shrink-0 min-h-[44px] px-2 py-2 rounded bg-black/50 border border-white/10 text-white text-sm text-center outline-none focus:border-orange-500 focus:bg-black/70"
-              />
-            </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
-  const items = [];
-  const exs = exercises || [];
-  for (let i = 0; i < exs.length; i++) {
-    const ex = exs[i];
-    if (!ex) continue;
-
-    // Skip A2 entries; they render inside the Superset group.
-    if (ex.superset && ex.superset.position === 2) continue;
-
-    if (ex.superset && ex.superset.position === 1) {
-      const group = ex.superset.group;
-      const partner = exs[i + 1];
-      const hasPartner = partner && partner.superset && partner.superset.group === group;
-
-      const between = ex.superset.betweenRest || '0-30s';
-      const post = ex.superset.postRest || '60-120s';
-
-      items.push(
-        <div key={`ss-${group}-${i}`} className="p-3 rounded-xl bg-black/40 border border-white/10">
-          <div className="flex flex-col gap-1 mb-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-xs font-bold tracking-widest text-purple-200">SUPERSET {group}</div>
-              <span className="px-2 py-1 bg-purple-500/20 text-purple-300 rounded font-bold text-[11px]">
-                No rest (or {between}) between
-              </span>
-            </div>
-            {hasPartner ? (
-              <div className="text-xs text-gray-300">
-                Do <span className="font-bold text-white">{ex.name}</span> → <span className="font-bold text-white">{partner.name}</span>, then rest <span className="font-bold text-white">{post}</span>.
-              </div>
-            ) : (
-              <div className="text-xs text-gray-400">
-                Superset enabled, but partner exercise not found for this group.
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <ExerciseCard key={`ex-${i}`} ex={ex} index={i} showRest={false} ssOrder={`${group}1`} />
-            {hasPartner && <ExerciseCard key={`ex-${i+1}`} ex={partner} index={i+1} showRest={false} ssOrder={`${group}2`} />}
-          </div>
-
-          <div className="mt-2 text-xs text-gray-400">
-            Rest <span className="font-bold text-gray-200">{post}</span> after completing both exercises.
-          </div>
-        </div>
-      );
-
-      continue;
-    }
-
-    // Normal (non-superset) exercise card.
-    items.push(<ExerciseCard key={`ex-${i}`} ex={ex} index={i} showRest={true} />);
-  }
-
-  return items;
-})()}
+                      items.push(<ExerciseCard key={`ex-${i}`} ex={ex} index={i} showRest={true} {...cardProps} />);
+                    }
+                    return items;
+                  })()}
                 </div>
               )}
 
