@@ -181,6 +181,143 @@ async function pullFromCloud() {
 }
 
 // ---------------------------------------------------------------------------
+// BROWSE — list every saved profile from Supabase
+// ---------------------------------------------------------------------------
+// NOTE: Your Supabase project has RLS disabled (visible in the dashboard).
+// This means browseProfiles() returns ALL rows from ALL users — not just your
+// own profile.  This is intentional for a shared-device gym scenario but
+// should be restricted with Row Level Security before any public release.
+// SQL to enable per-user scoping once you add auth:
+//   ALTER TABLE user_data ENABLE ROW LEVEL SECURITY;
+//   CREATE POLICY "users_own_rows" ON user_data USING (key_name = current_user);
+async function browseProfiles() {
+    if (!supabaseClient) {
+        return { error: 'Supabase not connected. Check console for details.', profiles: [] };
+    }
+    try {
+        const { data, error } = await supabaseClient
+            .from('user_data')
+            .select('key_name, created_at, updated_at, Content')
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+            return { error: null, profiles: [] };
+        }
+
+        // Transform rows into display-friendly profile objects
+        const profiles = data.map(row => {
+            const keyName   = row.key_name || '';
+            const content   = row.Content || {};
+            const cfg       = content.config || {};
+            const prog      = content.program;
+            const syncedAt  = content._syncedAt || row.updated_at || row.created_at;
+
+            // Strip the "trainiq:" prefix to show a clean ID in the UI
+            const displayId = keyName.replace(/^trainiq:/, '');
+            // Truncate UUID to first 8 chars for readability
+            const shortId   = displayId.length > 8 ? displayId.slice(0, 8) + '…' : displayId;
+
+            let weekCount = 0;
+            let exCount   = 0;
+            let hasSetLog = false;
+            if (prog && Array.isArray(prog.weeks)) {
+                weekCount = prog.weeks.length;
+                prog.weeks.forEach(wk => {
+                    (wk.workouts || []).forEach(wo => {
+                        (wo.exercises || []).forEach(ex => {
+                            exCount++;
+                            if (Array.isArray(ex.setLog) && ex.setLog.some(s => s.weight || s.reps)) {
+                                hasSetLog = true;
+                            }
+                        });
+                    });
+                });
+            }
+
+            return {
+                keyName,          // full "trainiq:<uuid>" key — used to fetch
+                displayId,        // full uuid
+                shortId,          // truncated for UI
+                programType: cfg.programType || '—',
+                experience:  cfg.experience  || '—',
+                days:        cfg.days        || '—',
+                weekCount,
+                exCount,
+                hasSetLog,
+                syncedAt:    syncedAt ? new Date(syncedAt).toLocaleString() : 'Unknown',
+                rawContent:  content         // kept so loadProfileById can use it directly
+            };
+        });
+
+        return { error: null, profiles };
+
+    } catch (err) {
+        console.error('browseProfiles error:', err);
+        return { error: err.message, profiles: [] };
+    }
+}
+
+// ---------------------------------------------------------------------------
+// LOAD A SPECIFIC PROFILE — import another profile's data into the current session
+// ---------------------------------------------------------------------------
+async function loadProfileById(keyName, rawContent) {
+    // rawContent is passed from the browse result so we don't need an extra
+    // round-trip to Supabase. If absent we re-fetch (defensive fallback).
+    try {
+        let cloudState = rawContent || null;
+
+        if (!cloudState) {
+            if (!supabaseClient) throw new Error('Supabase not connected');
+            const { data, error } = await supabaseClient
+                .from('user_data')
+                .select('Content, created_at, updated_at')
+                .eq('key_name', keyName)
+                .single();
+            if (error) throw error;
+            cloudState = data?.Content;
+        }
+
+        if (!cloudState) {
+            alert('❌ The selected profile has no data.');
+            return false;
+        }
+
+        // Write to the CURRENT profile's localStorage key so the app picks it
+        // up on reload — we never redirect the user to a different profile URL.
+        const currentProfileId = _syncGetProfileId();
+        const stateKey         = `trainiq:${currentProfileId}:state`;
+
+        // Merge 1RMs: same logic as pullFromCloud — never silently wipe local values
+        const rawLocal = localStorage.getItem(stateKey);
+        if (rawLocal) {
+            try {
+                const localState  = JSON.parse(rawLocal);
+                const localOneRMs = localState?.config?.oneRMs;
+                const cloudOneRMs = cloudState?.config?.oneRMs;
+                if (localOneRMs && cloudOneRMs && cloudState.config) {
+                    const merged = { ...localOneRMs };
+                    Object.keys(cloudOneRMs).forEach(k => {
+                        const v = parseFloat(cloudOneRMs[k]);
+                        if (!isNaN(v) && v > 0) merged[k] = cloudOneRMs[k];
+                    });
+                    cloudState.config.oneRMs = merged;
+                }
+            } catch (_) { /* proceed with cloud state as-is */ }
+        }
+
+        localStorage.setItem(stateKey, JSON.stringify(cloudState));
+        return true;
+
+    } catch (err) {
+        console.error('loadProfileById error:', err);
+        alert('❌ Failed to load profile:\n' + err.message);
+        return false;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // HELPERS
 // ---------------------------------------------------------------------------
 
@@ -258,8 +395,10 @@ function _buildSyncSummary(state) {
     }
 }
 
-// Expose globally — called by the buttons in index.html
-window.pushToCloud  = pushToCloud;
-window.pullFromCloud = pullFromCloud;
+// Expose globally — called from index.html
+window.pushToCloud     = pushToCloud;
+window.pullFromCloud   = pullFromCloud;
+window.browseProfiles  = browseProfiles;
+window.loadProfileById = loadProfileById;
 
 console.log('📦 supabase-sync v3 loaded');
