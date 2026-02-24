@@ -1,34 +1,18 @@
-// ==================== SUPABASE CLOUD SYNC (v3) ====================
+// ==================== SUPABASE CLOUD SYNC (v4) ====================
 //
 // WHAT THIS FILE DOES:
-//   pushToCloud() — Reads full app state (program + edits + 1RMs) from
-//                   localStorage and upserts it to Supabase. Safe to call
-//                   multiple times. Uses updated_at so created_at is preserved.
+//   pushToCloud()    — Reads full app state from localStorage and upserts to Supabase.
+//   pullFromCloud()  — Fetches state, merges 1RMs, restores to localStorage.
+//   browseProfiles() — Lists all saved profiles from Supabase for import.
+//   loadProfileById()— Imports a specific profile into the current session.
 //
-//   pullFromCloud() — Fetches state from Supabase, shows a preview, merges
-//                     1RMs (never silently overwrites local values), then
-//                     reloads the app.
+// COMPATIBLE TABLE SCHEMA (user_data — 3 columns only):
+//   key_name   TEXT  (primary key, e.g. "trainiq:<uuid>")
+//   created_at TIMESTAMPTZ
+//   Content    JSONB
 //
-// WHAT THIS CAPTURES:
-//   ✓ Full 12-week generated program
-//   ✓ Exercise swaps (name + originalName)
-//   ✓ Set count changes (+/- Set buttons)
-//   ✓ Exercise deletions
-//   ✓ Per-set logged weight / reps / RIR (via setLog — requires Fix 3 in index.html)
-//   ✓ 1RM values (merged on pull — never silently cleared)
-//   ✓ Warm-up preferences
-//   ✓ Program history (up to 10 blocks)
-//
-// SUPABASE TABLE (user_data):
-//   Your existing table is correct. One recommended upgrade — run this SQL once
-//   in the Supabase SQL Editor to add an updated_at column so created_at is never
-//   overwritten:
-//
-//     ALTER TABLE user_data
-//       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
-//
-//   Then each row correctly tracks both when a program was first created AND
-//   when it was last cloud-synced.
+// The sync timestamp is stored inside Content._syncedAt — no extra column needed.
+// Do NOT add updated_at unless you also update all queries here.
 
 const SUPABASE_URL = 'https://mujacewgojnbgbtxovkw.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11amFjZXdnb2puYmdidHhvdmt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5OTk4NDMsImV4cCI6MjA4NTU3NTg0M30.ed6BEfgZqhgK9SZ78SxPxdCXbb0U9O8JZg5xGQBBe34';
@@ -72,13 +56,12 @@ async function pushToCloud() {
         // Persist the stamped copy locally so timestamps stay consistent
         localStorage.setItem(stateKey, JSON.stringify(state));
 
-        // FIX: Use updated_at for the sync timestamp so created_at (when the
-        // program was first built) is never overwritten.  Falls back gracefully
-        // if the column doesn't exist yet on older deployments.
+        // NOTE: user_data table only has: key_name, created_at, Content.
+        // No updated_at column exists — Supabase throws 42703 if you include it.
+        // The sync timestamp lives inside Content._syncedAt instead.
         const payload = {
-            key_name:   `trainiq:${profileId}`,
-            Content:    state,
-            updated_at: now          // add column via SQL — see header comment
+            key_name: `trainiq:${profileId}`,
+            Content:  state
         };
 
         const { error } = await supabaseClient
@@ -111,7 +94,7 @@ async function pullFromCloud() {
 
         const { data, error } = await supabaseClient
             .from('user_data')
-            .select('Content, created_at, updated_at')
+            .select('Content, created_at')
             .eq('key_name', `trainiq:${profileId}`)
             .single();
 
@@ -132,7 +115,7 @@ async function pullFromCloud() {
         const cloudState = data.Content;
 
         // Show a meaningful preview so the user knows what they're about to load
-        const syncedAt = cloudState._syncedAt || data.updated_at || data.created_at;
+        const syncedAt = cloudState._syncedAt || data.created_at;
         const lastSynced = syncedAt
             ? new Date(syncedAt).toLocaleString()
             : 'Unknown';
@@ -197,7 +180,7 @@ async function browseProfiles() {
     try {
         const { data, error } = await supabaseClient
             .from('user_data')
-            .select('key_name, created_at, updated_at, Content')
+            .select('key_name, created_at, Content')
             .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -212,7 +195,7 @@ async function browseProfiles() {
             const content   = row.Content || {};
             const cfg       = content.config || {};
             const prog      = content.program;
-            const syncedAt  = content._syncedAt || row.updated_at || row.created_at;
+            const syncedAt  = content._syncedAt || row.created_at;
 
             // Strip the "trainiq:" prefix to show a clean ID in the UI
             const displayId = keyName.replace(/^trainiq:/, '');
@@ -272,7 +255,7 @@ async function loadProfileById(keyName, rawContent) {
             if (!supabaseClient) throw new Error('Supabase not connected');
             const { data, error } = await supabaseClient
                 .from('user_data')
-                .select('Content, created_at, updated_at')
+                .select('Content, created_at')
                 .eq('key_name', keyName)
                 .single();
             if (error) throw error;
