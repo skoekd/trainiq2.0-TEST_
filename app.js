@@ -2258,7 +2258,7 @@ function TrainIQ() {
     };
     return (React.createElement("div", { className: "min-h-screen app-bg" },
         tab === 'home' && (React.createElement(HomeScreen, { config: config, setConfig: setConfig, onGenerate: handleGenerate, program: program, onContinue: handleContinue })),
-        tab === 'workouts' && program && (React.createElement(WorkoutsScreen, { program: program, config: config, setProgram: setProgram, onSave: () => {
+        tab === 'workouts' && program && (React.createElement(WorkoutsScreen, { program: program, config: config, setProgram: setProgram, onContinue: handleContinue, onSave: () => {
                 if (program && !history.find(p => p.createdAt === program.createdAt)) {
                     setHistory(prev => [program, ...prev].slice(0, 10));
                 }
@@ -2340,14 +2340,14 @@ function HomeScreen({ config, setConfig, onGenerate, program, onContinue }) {
                     (isValid ? "premium-gradient text-white shadow-xl" : "glass text-gray-600 cursor-not-allowed") }, "GENERATE PROGRAM"),
             program && React.createElement("button", { onClick: () => {
                 if (!isValid) { alert('Please fill in all settings first.'); return; }
-                if (confirm('Continue your program into the next block?\n\nYour completed block will be saved to History and a new block will be generated with progressive exercise variations.')) {
+                if (confirm(`Continue your program into Block ${(parseInt(program.blockNum) || 0) + 2}?\n\nYour completed block will be saved to History and a new block will be generated.`)) {
                     onContinue();
                 }
-            }, className: "w-full p-4 rounded-xl font-display font-bold text-base transition btn-touch glass border border-orange-500/40 text-orange-400 hover:bg-orange-500/10" },
-                "↗ CONTINUE PROGRAM — BLOCK " + (((parseInt(program && program.blockNum) || 0) + 2))))));
+            }, className: "w-full py-3 rounded-xl text-sm font-semibold transition btn-touch text-gray-500 hover:text-orange-400 glass border border-white/8" },
+                "Already finished? Continue into Block " + ((parseInt(program && program.blockNum) || 0) + 2) + " \u2192"))));
 }
 // ==================== WORKOUTS SCREEN ====================
-function WorkoutsScreen({ program, config, setProgram, onSave }) {
+function WorkoutsScreen({ program, config, setProgram, onSave, onContinue }) {
     const [week, setWeek] = useState(1);
     const currentWeek = program.weeks[week - 1];
     // Persist per-workout edits (swap / delete / set +/-) back into the program
@@ -2392,9 +2392,30 @@ function WorkoutsScreen({ program, config, setProgram, onSave }) {
                 React.createElement("div", { className: "flex gap-2 overflow-x-auto pb-2" }, program.weeks.map(w => (React.createElement("button", { key: w.number, onClick: () => setWeek(w.number), className: "px-3 py-2 rounded-lg font-bold text-sm whitespace-nowrap transition " +
                         (week === w.number ? "premium-gradient text-white" :
                             w.deload ? "bg-yellow-500/20 text-yellow-400" : "glass text-gray-400") }, w.deload ? `W${w.number} ↓` : `W${w.number}`)))))),
-        React.createElement("div", { className: "px-4 py-4 space-y-3" }, currentWeek.workouts.map((workout, i) => (
-        // IMPORTANT: use a stable key so WorkoutCard state doesn't bleed across week/day changes.
-        React.createElement(WorkoutCard, { key: `${week}-${workout.dayNumber}`, workout: workout, warmupPrefs: config === null || config === void 0 ? void 0 : config.warmups, onUpdateExercises: (next) => updateWorkoutExercises(i, next) }))))));
+        React.createElement("div", { className: "px-4 py-4 space-y-3" },
+            currentWeek.workouts.map((workout, i) => (
+                React.createElement(WorkoutCard, { key: `${week}-${workout.dayNumber}`, workout: workout, warmupPrefs: config === null || config === void 0 ? void 0 : config.warmups, onUpdateExercises: (next) => updateWorkoutExercises(i, next) })
+            )),
+            // Block Complete Banner — shown only on the final week
+            week === program.weeks.length && (
+                React.createElement("div", { className: "mt-4 rounded-2xl overflow-hidden", style: { background: 'linear-gradient(135deg, rgba(249,115,22,0.15) 0%, rgba(220,38,38,0.12) 100%)', border: '1px solid rgba(249,115,22,0.30)' } },
+                    React.createElement("div", { className: "p-5" },
+                        React.createElement("div", { className: "flex items-center gap-3 mb-3" },
+                            React.createElement("div", { className: "w-10 h-10 rounded-xl premium-gradient flex items-center justify-center text-xl flex-shrink-0" }, "\uD83C\uDFC1"),
+                            React.createElement("div", null,
+                                React.createElement("div", { className: "font-display font-bold text-base text-white tracking-wide" }, "BLOCK " + ((parseInt(program.blockNum) || 0) + 1) + " COMPLETE"),
+                                React.createElement("div", { className: "text-xs text-gray-400 mt-0.5" }, "You've finished all " + program.weeks.length + " weeks. Ready for the next block?"))),
+                        React.createElement("div", { className: "text-xs text-gray-400 mb-4 leading-relaxed" }, "The next block will carry forward your settings and advance your exercises to the next progression tier — harder variations, heavier patterns."),
+                        React.createElement("button", {
+                            onClick: () => {
+                                if (confirm(`Start Block ${(parseInt(program.blockNum) || 0) + 2}?\n\nThis block will be saved to History and a new progressive program will be generated.`)) {
+                                    if (typeof onContinue === 'function') onContinue();
+                                }
+                            },
+                            className: "w-full p-4 rounded-xl font-display font-bold text-base transition btn-touch premium-gradient text-white shadow-xl"
+                        }, "\u2197 START BLOCK " + ((parseInt(program.blockNum) || 0) + 2))))
+            )
+        )));
 }
 // ==================== WORKOUT CARD ====================
 function WorkoutCard({ workout, warmupPrefs, onUpdateExercises }) {
