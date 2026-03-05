@@ -90,112 +90,189 @@ const EXERCISE_DB = {
 
 // ==================== EXERCISE PROGRESSION TIERS ====================
 // Maps movement categories to an ordered progression ladder.
-// Tier 1 = foundational / easiest to learn
-// Tier 2 = intermediate complexity / load potential
-// Tier 3 = advanced — highest demand, best stimulus once technically proficient
-// During Base phase: prefer Tier 1–2. Intensification: Tier 2. Peak: Tier 2–3.
-// Progression is also gated by user's experience level.
+//
+// COACHING RATIONALE (CSCS-aligned):
+// Tier 1 = Foundational — machine/guided, low CNS demand, easy to learn form. 
+//          Best for beginners, deload weeks, and early Base phases.
+// Tier 2 = Intermediate — DB/cable, moderate stability demand, good load potential.
+//          Core of most hypertrophy and intermediate programs.
+// Tier 3 = Advanced — barbell/highest overload, max neural demand.
+//          Reserved for Peak phases, advanced lifters, and Strength/Powerbuilding specificity.
+//
+// KEY DESIGN PRINCIPLES:
+// - Progression direction = increasing skill + load potential, NOT just "harder for harder's sake"
+// - Cable isolation > DB isolation for hypertrophy (constant tension > passive tension at peak)
+// - Barbell = superior overload for Strength/Powerbuilding; not always superior for Hypertrophy
+// - Tier 3 exercises carry higher injury risk if introduced too early (deads, heavy squats, OHP)
+// - Program-type gates override base tier logic (Strength always starts at T3 for main lifts)
 const EXERCISE_PROGRESSION_TIERS = {
-    // CHEST PRESS: Machine → DB → Barbell
+    // CHEST PRESS: Machine → DB → Barbell/Weighted Dips
+    // Rationale: Machine removes stability demand (T1). DB adds unilateral stability (T2).
+    // Barbell allows maximal overload and is the primary strength expression (T3).
     chest_press: [
         { tier: 1, names: ['Machine Chest Press'] },
         { tier: 2, names: ['Dumbbell Bench Press', 'Incline Dumbbell Press'] },
         { tier: 3, names: ['Barbell Bench Press', 'Incline Barbell Press', 'Weighted Dips'] }
     ],
-    // CHEST FLY: Pec Deck (fixed path) → DB Fly → Cable (constant tension, advanced control)
+    // CHEST FLY: Pec Deck → Cable Flyes → Dumbbell Flyes
+    // Rationale: Pec Deck = fixed path (T1). Cable = constant tension through ROM (T2, superior
+    // hypertrophy stimulus, moderate skill). DB Fly = free path + maximal stretch under load +
+    // highest coordination demand (T3). Note: Cable is NOT harder than DB — it's better for
+    // hypertrophy due to constant tension, hence T2. DB fly adds stretch-mediated hypertrophy stimulus.
     chest_fly: [
         { tier: 1, names: ['Pec Deck'] },
-        { tier: 2, names: ['Dumbbell Flyes'] },
-        { tier: 3, names: ['Cable Flyes'] }
+        { tier: 2, names: ['Cable Flyes'] },
+        { tier: 3, names: ['Dumbbell Flyes'] }
     ],
-    // VERTICAL PULL: Machine/Lat Pulldown → Wide-Grip → Pull-ups → Weighted
+    // VERTICAL PULL: Lat Pulldown → Pull-ups → Weighted Pull-ups
+    // Rationale: Pulldown = assisted, guided, beginner-friendly (T1).
+    // Pull-ups = bodyweight, higher skill and strength requirement (T2).
+    // Weighted Pull-ups = maximal overload progression (T3).
     back_vertical: [
         { tier: 1, names: ['Lat Pulldown', 'Wide-Grip Pulldown'] },
         { tier: 2, names: ['Pull-ups'] },
         { tier: 3, names: ['Weighted Pull-ups'] }
     ],
-    // HORIZONTAL PULL: Machine/Cable → DB/T-Bar → Barbell
+    // HORIZONTAL PULL: Machine/Cable Row → DB/T-Bar → Barbell Row/Pendlay
+    // Rationale: Supported rows remove spinal erector fatigue (T1).
+    // DB/T-Bar adds ROM and unilateral stability (T2).
+    // Barbell Row = highest posterior chain integration, max overload (T3).
     back_horizontal: [
         { tier: 1, names: ['Seated Cable Row', 'Chest-Supported Row'] },
         { tier: 2, names: ['Dumbbell Row', 'T-Bar Row'] },
         { tier: 3, names: ['Barbell Row', 'Pendlay Row'] }
     ],
     // SHOULDER PRESS: Machine → DB → Barbell OHP
+    // Rationale: Machine = fixed path, safest for beginners (T1).
+    // DB = bilateral but with independent path, higher stability demand (T2).
+    // Barbell OHP = axial loading, highest neural demand + overload (T3).
     shoulders_press: [
         { tier: 1, names: ['Machine Shoulder Press'] },
         { tier: 2, names: ['Seated Dumbbell Press', 'Arnold Press'] },
         { tier: 3, names: ['Overhead Press'] }
     ],
-    // LATERAL RAISE: Machine (guided) → Cable → DB (free)
+    // LATERAL RAISE: Machine → DB → Cable
+    // Rationale: Machine = perfectly guided arc, low skill (T1).
+    // DB = free path, slight stability demand (T2, accessible and standard).
+    // Cable = constant tension throughout the ENTIRE ROM — the side delt is most
+    // activated under constant resistance; cable is the SUPERIOR hypertrophy stimulus (T3).
     shoulders_lateral: [
         { tier: 1, names: ['Machine Lateral Raise'] },
-        { tier: 2, names: ['Cable Lateral Raise'] },
-        { tier: 3, names: ['Lateral Raise'] }
+        { tier: 2, names: ['Lateral Raise'] },
+        { tier: 3, names: ['Cable Lateral Raise'] }
     ],
-    // REAR DELT: Reverse Pec Deck → Face Pull → Bent-Over Fly
+    // REAR DELT: Reverse Pec Deck → Face Pull → Bent-Over Dumbbell Fly
+    // Rationale: Machine = fixed arc, safest (T1). Face Pull = cable, adds external
+    // rotation component and scapular health benefit (T2). Bent-Over Fly = highest
+    // proprioceptive and positional demand (T3).
     shoulders_rear: [
         { tier: 1, names: ['Reverse Pec Deck'] },
         { tier: 2, names: ['Face Pull'] },
         { tier: 3, names: ['Bent-Over Fly'] }
     ],
-    // SQUAT: Leg Press → Hack Squat → Bulgarian → Back Squat → Front Squat
+    // SQUAT: Leg Press → Hack Squat / Bulgarian → Back Squat / Front Squat
+    // Rationale: Leg Press = no axial loading, safest (T1). Hack Squat = axial load
+    // but machine-guided; Bulgarian = high unilateral challenge (T2).
+    // Back Squat = highest CNS demand, full axial load + balance (T3).
+    // Front Squat at T3 appropriate for athletic/powerlifting programs.
     legs_squat: [
         { tier: 1, names: ['Leg Press'] },
         { tier: 2, names: ['Hack Squat', 'Bulgarian Split Squat'] },
         { tier: 3, names: ['Back Squat', 'Front Squat'] }
     ],
-    // HINGE: DB RDL → Romanian Deadlift → Trap Bar → Conventional/Sumo
+    // HINGE: DB RDL → Romanian Deadlift / Trap Bar → Conventional / Sumo Deadlift
+    // Rationale: DB RDL = lightweight, teaches hip hinge pattern with low spinal load (T1).
+    // RDL barbell / Trap Bar = significant load but forgiving mechanics (T2).
+    // Conventional / Sumo = highest technical demand + fatigue cost, max posterior chain (T3).
     legs_hinge: [
         { tier: 1, names: ['Dumbbell RDL'] },
         { tier: 2, names: ['Romanian Deadlift', 'Trap Bar Deadlift'] },
         { tier: 3, names: ['Conventional Deadlift', 'Sumo Deadlift'] }
     ],
-    // LEG ISOLATION: consistent across tiers (machine-only, low barrier)
+    // LEG ISOLATION — Quad / Hamstring machines
+    // Rationale: Standard machine work is accessible at all levels.
+    // T1 = Leg Extension / Leg Curl (standard bilateral).
+    // T2 = Seated Leg Curl (greater hip flexion = better hamstring stretch stimulus).
+    // T3 = Single-Leg Extension (unilateral, higher motor demand) / Nordic Curl
+    //      (eccentric overload, elite-level hamstring exercise — highest injury-prevention value).
     legs_isolation: [
         { tier: 1, names: ['Leg Extension', 'Leg Curl'] },
         { tier: 2, names: ['Seated Leg Curl'] },
-        { tier: 3, names: ['Leg Extension', 'Seated Leg Curl'] }
+        { tier: 3, names: ['Single-Leg Extension', 'Nordic Curl'] }
     ],
-    // GLUTES
+    // GLUTES: Bodyweight Glute Bridge → Dumbbell Hip Thrust → Barbell Hip Thrust
+    // Rationale: BW Bridge = learns the pattern, low load (T1).
+    // DB Hip Thrust = adds meaningful load with easier setup than barbell (T2).
+    // Barbell Hip Thrust = maximal glute overload, gold standard for glute hypertrophy (T3).
     legs_glutes: [
         { tier: 1, names: ['Glute Bridge'] },
         { tier: 2, names: ['Hip Thrust'] },
-        { tier: 3, names: ['Hip Thrust'] }
+        { tier: 3, names: ['Barbell Hip Thrust'] }
     ],
-    // BICEPS: DB/Hammer → Cable → Barbell/Preacher
+    // BICEPS: DB/Hammer → Cable Curl / Preacher → Barbell / EZ-Bar
+    // Rationale: DB/Hammer = easiest to learn, good ROM (T1).
+    // Cable Curl = constant tension; Preacher = removes cheating + great stretch (T2).
+    // Barbell / EZ-Bar = highest absolute load potential — best for strength overload (T3).
+    // Note: Preacher is NOT duplicated across tiers.
     arms_biceps: [
         { tier: 1, names: ['Dumbbell Curl', 'Hammer Curl'] },
         { tier: 2, names: ['Cable Curl', 'Preacher Curl'] },
-        { tier: 3, names: ['Barbell Curl', 'Preacher Curl'] }
+        { tier: 3, names: ['Barbell Curl', 'EZ-Bar Curl'] }
     ],
-    // TRICEPS: Pushdown → Overhead Extension/Skull → Close-Grip Bench
+    // TRICEPS: Pushdown → Skull Crusher / Overhead Extension → Close-Grip Bench
+    // Rationale: Pushdown = low skill, constant tension, safe for beginners (T1).
+    // Skull Crusher = mechanical overload, stretch stimulus (T2).
+    // Overhead Extension = long-head emphasis under stretch (T2 alternative).
+    // Close-Grip Bench = highest compound overload for triceps, Strength/Powerbuilding staple (T3).
     arms_triceps: [
         { tier: 1, names: ['Tricep Pushdown', 'Rope Pushdown'] },
-        { tier: 2, names: ['Overhead Extension', 'Skull Crusher'] },
-        { tier: 3, names: ['Close-Grip Bench', 'Skull Crusher'] }
+        { tier: 2, names: ['Skull Crusher', 'Overhead Extension'] },
+        { tier: 3, names: ['Close-Grip Bench'] }
     ]
 };
 
 /**
- * Given a phase and experience level, return the appropriate progression tier (1-3).
- * Beginners stay in tier 1 longer; advanced lifters unlock tier 3 earlier.
+ * Given a phase, experience level, blockNum, and programType — return the appropriate
+ * progression tier (1–3).
+ *
+ * COACHING LOGIC:
+ * - Beginners are capped at Tier 2 regardless of block count (barbell compounds too risky
+ *   until movement patterns are truly grooved — typically 6+ months of consistent training).
+ * - Intermediate lifters progress Tier 1 → 2 → 3 across phases and blocks.
+ * - Advanced lifters start at Tier 2 and can access Tier 3 by Intensification phase Block 1.
+ * - Strength / Powerbuilding programs hard-floor at Tier 2 for main compound lifts
+ *   (these programs are barbell-centric by definition).
+ * - Power / Speed-Strength programs hard-floor at Tier 3 for primary movements
+ *   (specificity demands the most explosive barbell expressions).
+ * - Hypertrophy programs sit comfortably at T2 for most accessories; T3 is optional upside.
  */
-function getProgressionTier(phaseName, experience, blockNum) {
-    // blockNum: 0 = first block, 1+ = subsequent blocks (for "continue" feature)
+function getProgressionTier(phaseName, experience, blockNum, programType) {
     const bn = parseInt(blockNum) || 0;
     const exp = experience || 'Intermediate';
-    
+    const pt = programType || 'Hypertrophy';
+
+    // Program-type hard floors — these override phase/experience logic for primary lifts
+    if (pt === 'Power / Speed-Strength') return 3;
+    if ((pt === 'Strength' || pt === 'Powerbuilding') && bn >= 1) return 3;
+
     const tierByPhaseAndExp = {
-        Beginner: { Base: 1, Intensification: 1, Peak: 2 },
-        Intermediate: { Base: 1, Intensification: 2, Peak: 2 },
-        Advanced: { Base: 2, Intensification: 2, Peak: 3 }
+        //          Base  Intens  Peak  Deload
+        Beginner:    { Base: 1, Intensification: 1, Peak: 2, Deload: 1 },
+        Intermediate:{ Base: 1, Intensification: 2, Peak: 2, Deload: 1 },
+        Advanced:    { Base: 2, Intensification: 2, Peak: 3, Deload: 2 }
     };
-    
+
     let tier = (tierByPhaseAndExp[exp] || tierByPhaseAndExp.Intermediate)[phaseName] || 1;
-    
-    // Subsequent blocks: bump tier by 1 (up to 3) — athlete has built base
-    if (bn >= 1) tier = Math.min(3, tier + 1);
-    
+
+    // Subsequent blocks bump tier by 1, but Beginners are hard-capped at T2
+    if (bn >= 1) {
+        tier = Math.min(3, tier + 1);
+        if (exp === 'Beginner') tier = Math.min(2, tier);
+    }
+
+    // Strength/Powerbuilding programs: main compound accessories should not sit at T1
+    if ((pt === 'Strength' || pt === 'Powerbuilding') && tier < 2) tier = 2;
+
     return tier;
 }
 
@@ -203,7 +280,7 @@ function getProgressionTier(phaseName, experience, blockNum) {
  * Given an exercise name and its pool key, find the best tier-appropriate
  * progression exercise name. Returns original name if no tier match found.
  */
-function getProgressedExerciseName(origName, poolKey, phaseName, experience, blockNum) {
+function getProgressedExerciseName(origName, poolKey, phaseName, experience, blockNum, programType) {
     if (!poolKey) return origName;
     
     // Map poolKey to our tier table key
@@ -215,7 +292,7 @@ function getProgressedExerciseName(origName, poolKey, phaseName, experience, blo
     const tiers = EXERCISE_PROGRESSION_TIERS[tierKey];
     if (!tiers) return origName;
     
-    const targetTier = getProgressionTier(phaseName, experience, blockNum);
+    const targetTier = getProgressionTier(phaseName, experience, blockNum, programType);
     
     // Find best tier <= targetTier that has exercise options
     let best = null;
@@ -2050,7 +2127,7 @@ function generateProgram(config) {
                 // with phase and experience, and carries forward across blocks.
                 const poolKey = ex.tags && ex.tags.poolKey ? ex.tags.poolKey : null;
                 const progressedName = getProgressedExerciseName(
-                    ex.name, poolKey, phase.phase, experience, blockNum
+                    ex.name, poolKey, phase.phase, experience, blockNum, programType
                 );
                 const hasProgressed = progressedName !== ex.name;
                 
