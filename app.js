@@ -87,6 +87,154 @@ const EXERCISE_DB = {
         { name: "Skull Crusher", primary: "triceps", type: "isolation", skill: "medium", fatigue: "medium", repRange: [8, 12] }
     ]
 };
+
+// ==================== EXERCISE PROGRESSION TIERS ====================
+// Maps movement categories to an ordered progression ladder.
+// Tier 1 = foundational / easiest to learn
+// Tier 2 = intermediate complexity / load potential
+// Tier 3 = advanced — highest demand, best stimulus once technically proficient
+// During Base phase: prefer Tier 1–2. Intensification: Tier 2. Peak: Tier 2–3.
+// Progression is also gated by user's experience level.
+const EXERCISE_PROGRESSION_TIERS = {
+    // CHEST PRESS: Machine → DB → Barbell
+    chest_press: [
+        { tier: 1, names: ['Machine Chest Press'] },
+        { tier: 2, names: ['Dumbbell Bench Press', 'Incline Dumbbell Press'] },
+        { tier: 3, names: ['Barbell Bench Press', 'Incline Barbell Press', 'Weighted Dips'] }
+    ],
+    // CHEST FLY: Pec Deck (fixed path) → DB Fly → Cable (constant tension, advanced control)
+    chest_fly: [
+        { tier: 1, names: ['Pec Deck'] },
+        { tier: 2, names: ['Dumbbell Flyes'] },
+        { tier: 3, names: ['Cable Flyes'] }
+    ],
+    // VERTICAL PULL: Machine/Lat Pulldown → Wide-Grip → Pull-ups → Weighted
+    back_vertical: [
+        { tier: 1, names: ['Lat Pulldown', 'Wide-Grip Pulldown'] },
+        { tier: 2, names: ['Pull-ups'] },
+        { tier: 3, names: ['Weighted Pull-ups'] }
+    ],
+    // HORIZONTAL PULL: Machine/Cable → DB/T-Bar → Barbell
+    back_horizontal: [
+        { tier: 1, names: ['Seated Cable Row', 'Chest-Supported Row'] },
+        { tier: 2, names: ['Dumbbell Row', 'T-Bar Row'] },
+        { tier: 3, names: ['Barbell Row', 'Pendlay Row'] }
+    ],
+    // SHOULDER PRESS: Machine → DB → Barbell OHP
+    shoulders_press: [
+        { tier: 1, names: ['Machine Shoulder Press'] },
+        { tier: 2, names: ['Seated Dumbbell Press', 'Arnold Press'] },
+        { tier: 3, names: ['Overhead Press'] }
+    ],
+    // LATERAL RAISE: Machine (guided) → Cable → DB (free)
+    shoulders_lateral: [
+        { tier: 1, names: ['Machine Lateral Raise'] },
+        { tier: 2, names: ['Cable Lateral Raise'] },
+        { tier: 3, names: ['Lateral Raise'] }
+    ],
+    // REAR DELT: Reverse Pec Deck → Face Pull → Bent-Over Fly
+    shoulders_rear: [
+        { tier: 1, names: ['Reverse Pec Deck'] },
+        { tier: 2, names: ['Face Pull'] },
+        { tier: 3, names: ['Bent-Over Fly'] }
+    ],
+    // SQUAT: Leg Press → Hack Squat → Bulgarian → Back Squat → Front Squat
+    legs_squat: [
+        { tier: 1, names: ['Leg Press'] },
+        { tier: 2, names: ['Hack Squat', 'Bulgarian Split Squat'] },
+        { tier: 3, names: ['Back Squat', 'Front Squat'] }
+    ],
+    // HINGE: DB RDL → Romanian Deadlift → Trap Bar → Conventional/Sumo
+    legs_hinge: [
+        { tier: 1, names: ['Dumbbell RDL'] },
+        { tier: 2, names: ['Romanian Deadlift', 'Trap Bar Deadlift'] },
+        { tier: 3, names: ['Conventional Deadlift', 'Sumo Deadlift'] }
+    ],
+    // LEG ISOLATION: consistent across tiers (machine-only, low barrier)
+    legs_isolation: [
+        { tier: 1, names: ['Leg Extension', 'Leg Curl'] },
+        { tier: 2, names: ['Seated Leg Curl'] },
+        { tier: 3, names: ['Leg Extension', 'Seated Leg Curl'] }
+    ],
+    // GLUTES
+    legs_glutes: [
+        { tier: 1, names: ['Glute Bridge'] },
+        { tier: 2, names: ['Hip Thrust'] },
+        { tier: 3, names: ['Hip Thrust'] }
+    ],
+    // BICEPS: DB/Hammer → Cable → Barbell/Preacher
+    arms_biceps: [
+        { tier: 1, names: ['Dumbbell Curl', 'Hammer Curl'] },
+        { tier: 2, names: ['Cable Curl', 'Preacher Curl'] },
+        { tier: 3, names: ['Barbell Curl', 'Preacher Curl'] }
+    ],
+    // TRICEPS: Pushdown → Overhead Extension/Skull → Close-Grip Bench
+    arms_triceps: [
+        { tier: 1, names: ['Tricep Pushdown', 'Rope Pushdown'] },
+        { tier: 2, names: ['Overhead Extension', 'Skull Crusher'] },
+        { tier: 3, names: ['Close-Grip Bench', 'Skull Crusher'] }
+    ]
+};
+
+/**
+ * Given a phase and experience level, return the appropriate progression tier (1-3).
+ * Beginners stay in tier 1 longer; advanced lifters unlock tier 3 earlier.
+ */
+function getProgressionTier(phaseName, experience, blockNum) {
+    // blockNum: 0 = first block, 1+ = subsequent blocks (for "continue" feature)
+    const bn = parseInt(blockNum) || 0;
+    const exp = experience || 'Intermediate';
+    
+    const tierByPhaseAndExp = {
+        Beginner: { Base: 1, Intensification: 1, Peak: 2 },
+        Intermediate: { Base: 1, Intensification: 2, Peak: 2 },
+        Advanced: { Base: 2, Intensification: 2, Peak: 3 }
+    };
+    
+    let tier = (tierByPhaseAndExp[exp] || tierByPhaseAndExp.Intermediate)[phaseName] || 1;
+    
+    // Subsequent blocks: bump tier by 1 (up to 3) — athlete has built base
+    if (bn >= 1) tier = Math.min(3, tier + 1);
+    
+    return tier;
+}
+
+/**
+ * Given an exercise name and its pool key, find the best tier-appropriate
+ * progression exercise name. Returns original name if no tier match found.
+ */
+function getProgressedExerciseName(origName, poolKey, phaseName, experience, blockNum) {
+    if (!poolKey) return origName;
+    
+    // Map poolKey to our tier table key
+    const tierKey = Object.keys(EXERCISE_PROGRESSION_TIERS).find(k => 
+        poolKey.includes(k) || k === poolKey
+    );
+    if (!tierKey) return origName;
+    
+    const tiers = EXERCISE_PROGRESSION_TIERS[tierKey];
+    if (!tiers) return origName;
+    
+    const targetTier = getProgressionTier(phaseName, experience, blockNum);
+    
+    // Find best tier <= targetTier that has exercise options
+    let best = null;
+    for (let t = targetTier; t >= 1; t--) {
+        const slot = tiers.find(s => s.tier === t);
+        if (slot && slot.names.length) { best = slot; break; }
+    }
+    if (!best) return origName;
+    
+    // If original name already lives in the target tier — keep it (stability)
+    const allTierNames = best.names;
+    if (allTierNames.some(n => n.toLowerCase() === origName.toLowerCase())) {
+        return origName;
+    }
+    
+    // Return first name in the target tier
+    return best.names[0];
+}
+
 // ==================== EXERCISE TAG SCHEMA (for substitutions) ====================
 // We keep the generator database (EXERCISE_DB) lightweight, but use the more
 // comprehensive EXERCISE_DATABASE (loaded from exercise-database.js) for swaps.
@@ -525,31 +673,91 @@ function calcMainLiftWeight(oneRM, repsRange, rir, experience, programType, role
     pct = clamp(pct, 0.40, 0.95);
     return roundWeight(oneRM * pct);
 }
-function getPhaseParams(week) {
-    if (week <= 4) {
-        return {
-            phase: 'Base',
-            volumeMult: week === 4 ? 0.5 : 1.0,
-            intensityAdj: 0,
-            isDeload: week === 4
-        };
+// ==================== DYNAMIC PHASE PARAMS (supports 4-16 week blocks) ====================
+// Phase structure adapts based on total block length:
+// 4wk:  Base(3) + Deload(1)
+// 6wk:  Base(3) + Intensification(2) + Deload(1)
+// 8wk:  Base(4) + Intensification(3) + Deload(1)
+// 12wk: Base(4) + Intensification(4) + Peak(3) + Deload(1)
+// 16wk: Base(5) + Intensification(5) + Peak(5) + Deload(1)
+function getPhaseLayout(totalWeeks) {
+    const t = parseInt(totalWeeks) || 12;
+    if (t <= 4) {
+        return [{ phase: 'Base', weeks: t - 1 }, { phase: 'Deload', weeks: 1 }];
     }
-    else if (week <= 8) {
-        return {
-            phase: 'Intensification',
-            volumeMult: week === 8 ? 0.5 : 0.85,
-            intensityAdj: week === 8 ? -10 : 5,
-            isDeload: week === 8
-        };
+    if (t <= 6) {
+        const base = Math.ceil((t - 1) * 0.55);
+        const int_ = t - 1 - base;
+        return [
+            { phase: 'Base', weeks: base },
+            { phase: 'Intensification', weeks: int_ },
+            { phase: 'Deload', weeks: 1 }
+        ];
     }
-    else {
-        return {
-            phase: 'Peak',
-            volumeMult: week === 12 ? 0.5 : 0.7,
-            intensityAdj: week === 12 ? -15 : 10,
-            isDeload: week === 12
-        };
+    if (t <= 8) {
+        return [
+            { phase: 'Base', weeks: Math.round((t - 1) * 0.55) },
+            { phase: 'Intensification', weeks: t - 1 - Math.round((t - 1) * 0.55) },
+            { phase: 'Deload', weeks: 1 }
+        ];
     }
+    if (t <= 12) {
+        const work = t - 1;
+        const base = Math.round(work * 0.40);
+        const int_ = Math.round(work * 0.33);
+        const peak = work - base - int_;
+        return [
+            { phase: 'Base', weeks: base },
+            { phase: 'Intensification', weeks: int_ },
+            { phase: 'Peak', weeks: peak },
+            { phase: 'Deload', weeks: 1 }
+        ];
+    }
+    // 16+ weeks: expand each phase proportionally
+    const work = t - 1;
+    const base = Math.round(work * 0.38);
+    const int_ = Math.round(work * 0.33);
+    const peak = work - base - int_;
+    return [
+        { phase: 'Base', weeks: base },
+        { phase: 'Intensification', weeks: int_ },
+        { phase: 'Peak', weeks: peak },
+        { phase: 'Deload', weeks: 1 }
+    ];
+}
+
+function getPhaseParams(week, totalWeeks) {
+    const layout = getPhaseLayout(totalWeeks || 12);
+    let cursor = 0;
+    for (const segment of layout) {
+        const start = cursor + 1;
+        const end   = cursor + segment.weeks;
+        if (week >= start && week <= end) {
+            const isDeload = segment.phase === 'Deload';
+            const isLastInSeg = week === end;
+            // Within-segment intensity/volume progressions
+            const phaseName = isDeload ? 'Base' : segment.phase; // deload uses Base labels internally
+            const segLen = segment.weeks;
+            const posInSeg = week - start; // 0-based
+            // Intensity climbs across phases
+            const intAdj = {
+                Base: 0,
+                Intensification: 5 + Math.round(posInSeg * 2),
+                Peak: 10 + Math.round(posInSeg * 2.5)
+            }[segment.phase] || 0;
+            const volMult = isDeload ? 0.5 : (segment.phase === 'Peak' ? 0.7 : (isLastInSeg && segment.phase !== 'Base' ? 0.85 : 1.0));
+            return {
+                phase: phaseName,
+                displayPhase: segment.phase,
+                volumeMult: volMult,
+                intensityAdj: isDeload ? -15 : intAdj,
+                isDeload
+            };
+        }
+        cursor += segment.weeks;
+    }
+    // Fallback
+    return { phase: 'Base', displayPhase: 'Base', volumeMult: 1.0, intensityAdj: 0, isDeload: false };
 }
 // Rep ranges are phase- and role-aware for Powerbuilding.
 // This is critical to make the 12-week block behave like real powerbuilding:
@@ -1165,6 +1373,8 @@ const PROGRAM_PROFILES = (() => {
 function generateProgram(config) {
     var _a, _b, _c;
     const { experience, days, programType, oneRMs } = config;
+    const blockWeeks = parseInt(config.blockWeeks) || 12;
+    const blockNum   = parseInt(config.blockNum)   || 0;  // 0 = first block; 1+ = continuation
     const daysNum = parseInt(days);
     // Program profile (drives split + slots + exercise scoring)
     const profile = PROGRAM_PROFILES[programType] || PROGRAM_PROFILES.Hypertrophy;
@@ -1801,8 +2011,8 @@ function generateProgram(config) {
     function getBlockIndex(week) { return Math.floor((week - 1) / 4); }
     // -------------------- Build program --------------------
     const weeks = [];
-    for (let w = 1; w <= 12; w++) {
-        const phase = getPhaseParams(w);
+    for (let w = 1; w <= blockWeeks; w++) {
+        const phase = getPhaseParams(w, blockWeeks);
         const blockIndex = getBlockIndex(w);
         const weekInBlock = ((w - 1) % 4) + 1;
         const ramp = weekRampInBlock(weekInBlock);
@@ -1834,8 +2044,23 @@ function generateProgram(config) {
                 const sets = defaultSetsForRole(role, exType, ramp, dayIntent);
                 const rir = getRIR(experience, exType, 1, sets, programType, role, phase.phase, dayIntent);
                 const rest = getRest(reps[0], exType, programType);
+                
+                // ── Exercise Progression ──────────────────────────────────────
+                // Each phase unlocks harder exercise variants. Tier advances
+                // with phase and experience, and carries forward across blocks.
+                const poolKey = ex.tags && ex.tags.poolKey ? ex.tags.poolKey : null;
+                const progressedName = getProgressedExerciseName(
+                    ex.name, poolKey, phase.phase, experience, blockNum
+                );
+                const hasProgressed = progressedName !== ex.name;
+                
                 return {
                     ...ex,
+                    name: progressedName,
+                    _baseExerciseName: ex.name,         // always preserve original
+                    _progressionNote: hasProgressed 
+                        ? `Progressed from ${ex.name}` 
+                        : null,
                     reps,
                     sets,
                     rir,
@@ -1870,11 +2095,12 @@ function generateProgram(config) {
         weeks.push({
             number: w,
             phase: phase.phase,
+            displayPhase: phase.displayPhase || phase.phase,
             deload: ramp.deload || phase.isDeload,
             workouts
         });
     }
-    return { weeks, config, createdAt: new Date().toISOString(), generator: 'bulletproof_v3' };
+    return { weeks, config, createdAt: new Date().toISOString(), generator: 'bulletproof_v3', blockNum, blockWeeks };
 }
 // ==================== PROFILE-LINK (MULTI-USER) STORAGE ====================
 // 100% client-side, 100% free: we namespace localStorage by a profileId in the URL hash.
@@ -1962,6 +2188,8 @@ function TrainIQ() {
         days: '',
         time: '',
         programType: '',
+        blockWeeks: '12',
+        blockNum: 0,
         supersets: false,
         advancedTechniques: false,
         oneRMs: { chest: '', lats: '', shoulders: '', quads: '', hamstrings: '' },
@@ -1984,6 +2212,8 @@ function TrainIQ() {
                 const merged = {
                     ...DEFAULT_CONFIG,
                     ...data.config,
+                    blockWeeks: data.config.blockWeeks || DEFAULT_CONFIG.blockWeeks,
+                    blockNum: data.config.blockNum || 0,
                     oneRMs: { ...DEFAULT_CONFIG.oneRMs, ...(data.config.oneRMs || {}) },
                     warmups: { ...DEFAULT_CONFIG.warmups, ...(data.config.warmups || {}) }
                 };
@@ -2006,8 +2236,28 @@ function TrainIQ() {
         setProgram(newProgram);
         setTab('workouts');
     };
+    // Continue: generate a new block based on the completed one, incrementing blockNum
+    // so exercise progression tiers advance naturally.
+    const handleContinue = () => {
+        if (!program) return;
+        if (program) {
+            setHistory(prev => [program, ...prev].slice(0, 10));
+        }
+        const prevBlockNum = parseInt(program.blockNum) || 0;
+        const nextConfig = {
+            ...config,
+            blockNum: prevBlockNum + 1,
+            // Carry forward the same blockWeeks unless user changed it
+            blockWeeks: config.blockWeeks || program.blockWeeks || '12'
+        };
+        // Also bump blockNum on config so it persists
+        setConfig(nextConfig);
+        const newProgram = generateProgram(nextConfig);
+        setProgram(newProgram);
+        setTab('workouts');
+    };
     return (React.createElement("div", { className: "min-h-screen app-bg" },
-        tab === 'home' && (React.createElement(HomeScreen, { config: config, setConfig: setConfig, onGenerate: handleGenerate })),
+        tab === 'home' && (React.createElement(HomeScreen, { config: config, setConfig: setConfig, onGenerate: handleGenerate, program: program, onContinue: handleContinue })),
         tab === 'workouts' && program && (React.createElement(WorkoutsScreen, { program: program, config: config, setProgram: setProgram, onSave: () => {
                 if (program && !history.find(p => p.createdAt === program.createdAt)) {
                     setHistory(prev => [program, ...prev].slice(0, 10));
@@ -2018,8 +2268,10 @@ function TrainIQ() {
         React.createElement(TabBar, { tab: tab, setTab: setTab, hasProgram: !!program })));
 }
 // ==================== HOME SCREEN ====================
-function HomeScreen({ config, setConfig, onGenerate }) {
+function HomeScreen({ config, setConfig, onGenerate, program, onContinue }) {
     const isValid = config.experience && config.days && config.time && config.programType;
+    const blockWeeksOptions = ['4', '6', '8', '12', '16'];
+    const blockWeekLabels = { '4': '4 WKS', '6': '6 WKS', '8': '8 WKS', '12': '12 WKS', '16': '16 WKS' };
     return (React.createElement("div", { className: "content-with-tabs px-4 pt-8 pb-32 max-w-2xl mx-auto" },
         React.createElement("div", { className: "text-center mb-10" },
             React.createElement("div", { className: "w-20 h-20 mx-auto mb-4 rounded-2xl ring-premium overflow-hidden" },
@@ -2068,6 +2320,12 @@ function HomeScreen({ config, setConfig, onGenerate }) {
                     React.createElement("div", { className: "pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-300" },
                         React.createElement("svg", { width: "18", height: "18", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" },
                             React.createElement("path", { d: "m6 9 6 6 6-6" }))))),
+            React.createElement("div", null,
+                React.createElement("label", { className: "block text-xs font-bold text-gray-400 mb-2 tracking-wide flex items-center gap-2" },
+                    "BLOCK LENGTH",
+                    React.createElement("button", { type: "button", className: "text-gray-400 hover:text-white text-sm", onClick: () => alert("How many weeks is this training block?\n\n4 Weeks: Short, great for a quick cycle or deload reset.\n6 Weeks: Efficient — Base + Intensification.\n8 Weeks: Solid intermediate block.\n12 Weeks: Full 3-phase block (recommended).\n16 Weeks: Extended block for advanced periodization.") }, "\u2139\uFE0F")),
+                React.createElement("div", { className: "grid grid-cols-5 gap-2" }, blockWeeksOptions.map(w => (React.createElement("button", { key: w, onClick: () => setConfig({ ...config, blockWeeks: w }), className: "p-3 rounded-xl font-bold text-sm transition btn-touch " +
+                        ((config.blockWeeks || '12') === w ? "premium-gradient text-white shadow-lg" : "glass text-gray-300") }, blockWeekLabels[w]))))),
             React.createElement("div", { className: "flex items-center justify-between p-4 rounded-xl glass" },
                 React.createElement("span", { className: "font-semibold text-sm" }, "SUPERSETS"),
                 React.createElement("button", { onClick: () => setConfig({ ...config, supersets: !config.supersets }), className: "w-14 h-8 rounded-full transition " + (config.supersets ? "bg-orange-500" : "bg-gray-700") },
@@ -2076,10 +2334,17 @@ function HomeScreen({ config, setConfig, onGenerate }) {
                 React.createElement("div", null,
                     React.createElement("div", { className: "font-semibold text-sm" }, "ADVANCED TECHNIQUES"),
                     React.createElement("div", { className: "text-xs text-gray-400 mt-0.5" }, "Enable drop sets, rest-pause, myo-reps and more (applied to safe accessory work).")),
-                React.createElement("button", { onClick: onGenerate, disabled: !isValid, className: "w-full p-5 rounded-xl font-display font-bold text-lg transition btn-touch " +
-                        (isValid ? "premium-gradient text-white shadow-xl" : "glass text-gray-600 cursor-not-allowed") }, "GENERATE PROGRAM"))),
-        React.createElement("button", { onClick: () => setConfig({ ...config, advancedTechniques: !config.advancedTechniques }), className: "w-14 h-8 rounded-full transition " + (config.advancedTechniques ? "bg-orange-500" : "bg-gray-700"), "aria-label": "Toggle advanced training techniques" },
-            React.createElement("div", { className: "w-6 h-6 rounded-full bg-white transition-transform " + (config.advancedTechniques ? "translate-x-7" : "translate-x-1"), style: { marginTop: '4px' } }))));
+                React.createElement("button", { onClick: () => setConfig({ ...config, advancedTechniques: !config.advancedTechniques }), className: "w-14 h-8 rounded-full transition " + (config.advancedTechniques ? "bg-orange-500" : "bg-gray-700"), "aria-label": "Toggle advanced training techniques" },
+                    React.createElement("div", { className: "w-6 h-6 rounded-full bg-white transition-transform " + (config.advancedTechniques ? "translate-x-7" : "translate-x-1"), style: { marginTop: '4px' } }))),
+            React.createElement("button", { onClick: onGenerate, disabled: !isValid, className: "w-full p-5 rounded-xl font-display font-bold text-lg transition btn-touch " +
+                    (isValid ? "premium-gradient text-white shadow-xl" : "glass text-gray-600 cursor-not-allowed") }, "GENERATE PROGRAM"),
+            program && React.createElement("button", { onClick: () => {
+                if (!isValid) { alert('Please fill in all settings first.'); return; }
+                if (confirm('Continue your program into the next block?\n\nYour completed block will be saved to History and a new block will be generated with progressive exercise variations.')) {
+                    onContinue();
+                }
+            }, className: "w-full p-4 rounded-xl font-display font-bold text-base transition btn-touch glass border border-orange-500/40 text-orange-400 hover:bg-orange-500/10" },
+                "↗ CONTINUE PROGRAM — BLOCK " + (((parseInt(program && program.blockNum) || 0) + 2))))));
 }
 // ==================== WORKOUTS SCREEN ====================
 function WorkoutsScreen({ program, config, setProgram, onSave }) {
@@ -2117,10 +2382,12 @@ function WorkoutsScreen({ program, config, setProgram, onSave }) {
                         React.createElement("h2", { className: "font-display font-bold text-lg" },
                             "WEEK ",
                             week,
-                            " OF 12"),
+                            " OF ",
+                            program.weeks.length),
                         React.createElement("p", { className: "text-xs text-gray-400 mt-0.5" },
-                            currentWeek.phase,
-                            " Phase")),
+                            (currentWeek.displayPhase || currentWeek.phase),
+                            " Phase",
+                            (program.blockNum && program.blockNum > 0) ? ` · Block ${program.blockNum + 1}` : '')),
                     React.createElement("button", { onClick: onSave, className: "px-4 py-2 rounded-lg bg-blue-500 text-white text-xs font-bold" }, "SAVE")),
                 React.createElement("div", { className: "flex gap-2 overflow-x-auto pb-2" }, program.weeks.map(w => (React.createElement("button", { key: w.number, onClick: () => setWeek(w.number), className: "px-3 py-2 rounded-lg font-bold text-sm whitespace-nowrap transition " +
                         (week === w.number ? "premium-gradient text-white" :
@@ -2300,7 +2567,10 @@ function WorkoutCard({ workout, warmupPrefs, onUpdateExercises }) {
                                         }, className: "px-2 py-1 rounded-md border border-red-500/25 bg-red-500/10 text-[11px] font-bold text-red-300 hover:bg-red-500/20 btn-touch", title: "Delete exercise" }, "Delete"))),
                             ex.originalName && (React.createElement("div", { className: "text-[11px] text-gray-500 mt-0.5" },
                                 "Original: ",
-                                React.createElement("span", { className: "text-gray-300 font-semibold" }, ex.originalName)))),
+                                React.createElement("span", { className: "text-gray-300 font-semibold" }, ex.originalName))),
+                            ex._progressionNote && (React.createElement("div", { className: "text-[11px] text-orange-400/80 mt-0.5 flex items-center gap-1" },
+                                React.createElement("span", null, "↑"),
+                                ex._progressionNote))),
                         React.createElement("div", { className: "flex items-center gap-1.5" },
                             ssOrder && (React.createElement("span", { className: "px-2 py-1 bg-purple-500/25 text-purple-200 rounded font-bold text-[11px]" }, ssOrder)),
                             React.createElement("span", { className: `px-2 py-1 rounded font-bold text-[11px] ${role.cls}` }, role.text))),
