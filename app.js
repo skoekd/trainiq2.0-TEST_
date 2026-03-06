@@ -847,95 +847,243 @@ function getPhaseParams(week, totalWeeks) {
 // - Strength: phase-driven (base→intensification→peak), main lifts become more specific + lower rep
 // - Powerbuilding: day intent separates strength vs hypertrophy days; phases still matter
 // - Minimalist: moderate reps, conservative fatigue
-function getRepRange(programType, exType, position, role = 'accessory', phaseName = 'Base', dayIntent = null) {
-    const bump = (r) => (position === 0 ? r : [r[0] + 2, r[1] + 3]);
+/**
+ * getRepRange — Evidence-based rep ranges per program type, phase, role, and exercise type.
+ *
+ * COACHING RATIONALE (Schoenfeld 2017/2021, Israetel/RP, Helms MSP, NSCA):
+ *
+ * FIX 1 — REMOVED `bump()`: The previous `bump` function added +2 min / +3 max to every
+ *   exercise that wasn't the first in a day (based on idx). This was arbitrary exercise-order
+ *   logic with no coaching justification — it caused isolations to show 12–23 reps in Week 1
+ *   instead of the correct 10–20. Rep ranges must be driven by exercise ROLE and PHASE only.
+ *
+ * FIX 2 — PHASE PROGRESSION for Hypertrophy and Minimalist: Previously flat [6,10] across
+ *   ALL phases. Evidence-based periodization requires higher reps/lower intensity in Base
+ *   (accumulation) stepping down to lower reps/higher intensity in Peak (intensification).
+ *   Base: 8–15 compounds, 12–20 isolations.
+ *   Intensification: 6–10 compounds, 10–15 isolations.
+ *   Peak: 4–8 compounds, 8–12 isolations.
+ *
+ * FIX 3 — VARIANT PROGRAM TYPES (Power/Speed-Strength, GPP, EDT, Specialization)
+ *   previously fell through to flat Hypertrophy defaults. Each now has correct parameters.
+ *   Power/Speed: main compounds 2–5 reps (velocity/neural focus), per Prilepin, Cal Dietz.
+ *   GPP: compound 8–15, isolation 12–20, reflecting work capacity / general conditioning.
+ *   EDT: uses 10RM-based ranges (sets of ~5 initially), tracking time-based density.
+ *   Specialization: full rep spectrum (6–25) to maximize hypertrophy stimulus for target muscle.
+ */
+function getRepRange(programType, exType, _position, role = 'accessory', phaseName = 'Base', dayIntent = null) {
+    // NOTE: `_position` parameter retained for API compatibility but is NO LONGER USED.
+    // Rep ranges are determined by role/phase/type only — not exercise order in the day.
     
-    // ========================================
-    // FIX #8: GVT 10×10 REP PROTOCOL
-    // ========================================
+    const isMainish = (role === 'main' || role === 'secondary');
+    const intent = dayIntent || 'mixed';
+
+    // ── German Volume Training (GVT) ─────────────────────────────────────────
+    // Classic Poliquin protocol: 10×10 @ 60% for main compounds.
+    // Accessories: 3×10–15 (hypertrophy supportive).
     if (programType === 'German Volume Training (GVT)') {
-        if (role === 'main' && exType === 'compound') {
-            return [10, 10]; // ALWAYS 10 reps for main compounds
-        }
-        return [15, 20]; // Accessories: higher rep
+        if (role === 'main' && exType === 'compound') return [10, 10];
+        return [10, 15];
     }
-    
-    // ---------------- Strength ----------------
+
+    // ── Strength ─────────────────────────────────────────────────────────────
+    // Block periodization: NSCA + 5/3/1 model.
+    // Main/secondary compounds descend in reps as intensity increases.
+    // Accessories stay in hypertrophy-supportive ranges throughout.
     if (programType === 'Strength') {
-        const isMainish = (role === 'main' || role === 'secondary');
         if (exType === 'compound' && isMainish) {
-            // Classic block periodization
-            if (phaseName === 'Peak')
-                return bump(role === 'main' ? [1, 3] : [2, 4]);
-            if (phaseName === 'Intensification')
-                return bump([3, 5]);
-            return bump([4, 6]); // Base
+            if (phaseName === 'Peak')           return role === 'main' ? [1, 3] : [2, 4];
+            if (phaseName === 'Intensification') return role === 'main' ? [3, 5] : [3, 6];
+            return role === 'main' ? [4, 6] : [5, 8]; // Base
         }
-        // Accessories: hypertrophy-supportive, not excessive
-        const acc = (exType === 'compound') ? [5, 8] : [8, 15];
-        return bump(acc);
+        // Accessories: hypertrophy-supportive, unchanged across phases
+        return exType === 'compound' ? [6, 10] : [8, 15];
     }
-    // ---------------- Powerbuilding ----------------
+
+    // ── Powerbuilding ─────────────────────────────────────────────────────────
+    // GZCLP/Juggernaut hybrid: T1 (strength), T2 (moderate), T3 (accessory volume).
+    // Day intent governs whether a session is strength-focused or hypertrophy-focused.
     if (programType === 'Powerbuilding') {
-        const isMainish = (role === 'main' || role === 'secondary');
-        const intent = dayIntent || 'mixed';
         if (exType === 'compound' && isMainish) {
             if (phaseName === 'Peak') {
-                if (intent === 'hypertrophy')
-                    return bump(role === 'main' ? [3, 5] : [4, 6]);
-                return bump(role === 'main' ? [1, 4] : [2, 5]);
+                if (intent === 'hypertrophy') return role === 'main' ? [3, 5] : [4, 6];
+                return role === 'main' ? [1, 4] : [2, 5];
             }
             if (phaseName === 'Intensification') {
-                if (intent === 'hypertrophy')
-                    return bump([4, 7]);
-                return bump([3, 6]);
+                return intent === 'hypertrophy' ? [4, 7] : [3, 6];
             }
             // Base
-            if (intent === 'hypertrophy')
-                return bump([5, 8]);
-            return bump([4, 8]);
+            return intent === 'hypertrophy' ? [5, 8] : [4, 8];
         }
-        const acc = (exType === 'compound') ? [6, 12] : [10, 20];
-        return bump(acc);
+        return exType === 'compound' ? [6, 12] : [10, 20];
     }
-    // ---------------- Hypertrophy / Minimalist defaults ----------------
-    const ranges = {
-        Hypertrophy: { compound: [6, 10], isolation: [10, 20] },
-        Minimalist: { compound: [6, 10], isolation: [12, 20] }
-    };
-    const r = (ranges[programType] || ranges.Hypertrophy)[exType];
-    return bump(r);
+
+    // ── Power / Speed-Strength ────────────────────────────────────────────────
+    // Athletic programming: Cal Dietz Triphasic, Westside Dynamic Effort, VBT zones.
+    // Main compounds: low reps, high velocity (neural drive, not metabolic fatigue).
+    // Base: force/strength phase. Intensification: power transfer. Peak: speed expression.
+    // Accessories remain in moderate hypertrophy rep ranges.
+    if (programType === 'Power / Speed-Strength') {
+        if (exType === 'compound' && isMainish) {
+            if (phaseName === 'Peak')           return [1, 3];  // Max velocity / speed-strength
+            if (phaseName === 'Intensification') return [2, 5]; // Power / force-velocity midpoint
+            return [3, 6]; // Base: strength foundation (Triphasic eccentric/isometric blocks)
+        }
+        // Accessories: moderate reps for hypertrophic support; injury prevention capacity
+        return exType === 'compound' ? [6, 10] : [10, 15];
+    }
+
+    // ── Hypertrophy ───────────────────────────────────────────────────────────
+    // Schoenfeld (2021): hypertrophy occurs across 5–30+ reps when near failure.
+    // Israetel/RP: isolations 10–20 reps. Helms MSP: compounds 6–12 primary zone.
+    // Phase periodization: Base (higher reps, volume accumulation) → Peak (lower reps,
+    // intensity increases, same muscles stimulated at higher %1RM before deload).
+    if (programType === 'Hypertrophy') {
+        if (exType === 'compound' && isMainish) {
+            if (phaseName === 'Peak')           return [4, 8];
+            if (phaseName === 'Intensification') return [6, 10];
+            return [8, 12]; // Base: volume accumulation
+        }
+        if (exType === 'compound') { // accessory compounds
+            if (phaseName === 'Peak')           return [6, 10];
+            if (phaseName === 'Intensification') return [8, 12];
+            return [10, 15]; // Base
+        }
+        // Isolations: Israetel recommends 10–20, never below 10 for delts/arms
+        if (phaseName === 'Peak')           return [8, 12];
+        if (phaseName === 'Intensification') return [10, 15];
+        return [12, 20]; // Base: high-rep accumulation, stretch-mediated hypertrophy
+    }
+
+    // ── Minimalist ────────────────────────────────────────────────────────────
+    // Dan John Easy Strength / 3-day full body: fewer exercises, moderate reps,
+    // conservative fatigue (RIR 4–6+). Focus on movement quality over volume.
+    // Phase periodization retained but compressed — moderate reps throughout.
+    if (programType === 'Minimalist') {
+        if (exType === 'compound' && isMainish) {
+            if (phaseName === 'Peak')           return [3, 6];
+            if (phaseName === 'Intensification') return [5, 8];
+            return [6, 10]; // Base
+        }
+        return exType === 'compound' ? [8, 12] : [12, 20];
+    }
+
+    // ── GPP / Conditioning-Integrated ─────────────────────────────────────────
+    // Westside GPP, Dan John conditioning integration.
+    // Moderate reps throughout — work capacity focus; less intensity periodization.
+    // Compounds slightly higher rep (8–15) to build aerobic base and tissue resilience.
+    if (programType === 'GPP / Conditioning-Integrated') {
+        if (exType === 'compound' && isMainish) {
+            if (phaseName === 'Peak')           return [4, 8];
+            if (phaseName === 'Intensification') return [6, 10];
+            return [8, 15]; // Base: volume + conditioning
+        }
+        return exType === 'compound' ? [8, 12] : [12, 20];
+    }
+
+    // ── Density / EDT-style ───────────────────────────────────────────────────
+    // Charles Staley EDT: work to 10RM load, perform sets of ~5 (50% of RM),
+    // reducing reps per set as fatigue builds within 15-min PR Zones.
+    // Rep range represents per-set targets (not total), with format matching UI.
+    if (programType === 'Density (EDT-style)') {
+        if (exType === 'compound' && isMainish) {
+            if (phaseName === 'Peak')           return [3, 5];  // 6RM → sets of 3
+            if (phaseName === 'Intensification') return [4, 6]; // 8RM → sets of 4
+            return [5, 8]; // Base: 10RM → sets of 5
+        }
+        return exType === 'compound' ? [6, 10] : [10, 15];
+    }
+
+    // ── Specialization (Body-Part Focus) ─────────────────────────────────────
+    // Israetel specialization: full rep spectrum for target muscle (maximizing hypertrophy
+    // stimulus). Non-specialized muscles on maintenance volume only.
+    // Mix of rep ranges across sessions for multi-angular stimulus.
+    if (programType === 'Specialization (Body-Part Focus)') {
+        if (exType === 'compound' && isMainish) {
+            if (phaseName === 'Peak')           return [5, 8];
+            if (phaseName === 'Intensification') return [6, 12];
+            return [8, 15]; // Base: high volume accumulation
+        }
+        // Full rep spectrum for target isolations
+        if (phaseName === 'Peak')           return [8, 15];
+        if (phaseName === 'Intensification') return [10, 20];
+        return [12, 25]; // Base: stretch-mediated, high-rep emphasis
+    }
+
+    // ── Fallback (unknown program type) ──────────────────────────────────────
+    return exType === 'compound' ? [6, 12] : [10, 20];
 }
+
+/**
+ * getRIR — Reps-in-Reserve targets, evidence-based and phase-aware.
+ *
+ * FIX: Advanced lifters in Week 1/Base were getting 2 RIR for compounds.
+ *   Evidence (Israetel, Helms): Base/Accumulation Week 1 should be ~3–4 RIR (RPE 6–7)
+ *   regardless of experience level — the early mesocycle is for volume accumulation
+ *   and technique consolidation, not for pushing intensity.
+ *   Phase modifier now reduces RIR toward 0 as blocks progress:
+ *     Base: +1 RIR buffer  |  Intensification: no bonus  |  Peak: –1 RIR (approach failure)
+ *
+ * NSCA / RP / Helms references applied per phase:
+ *   Base W1: ~3–4 RIR compounds, ~2–3 RIR isolations
+ *   Intensification: ~2–3 RIR compounds, ~1–2 RIR isolations
+ *   Peak: ~1–2 RIR compounds, ~0–1 RIR isolations
+ *   Deload: ≥4 RIR (RPE ≤6), sub-maximal recovery
+ */
 function getRIR(experience, exType, setNum, totalSets, programType = 'Hypertrophy', role = 'accessory', phaseName = 'Base', dayIntent = null) {
-    // Base effort by training age
+    // Base effort by training age — per-set working RIR (middle of session)
     const base = {
-        Beginner: { compound: 3, isolation: 2 },
+        Beginner:     { compound: 3, isolation: 2 },
         Intermediate: { compound: 2, isolation: 1 },
-        Advanced: { compound: 1, isolation: 0 }
+        Advanced:     { compound: 2, isolation: 1 }  // FIX: was 1/0, too aggressive for Week 1
     };
     let rir = (base[experience] && base[experience][exType] != null) ? base[experience][exType] : 2;
+
+    // Phase modifier: Base accumulation adds buffer; Peak pushes closer to failure
+    // This creates the correct RPE ramp across the mesocycle
+    if (phaseName === 'Base' || phaseName === 'Deload') {
+        rir += 1; // Base: conservative start (MEV, technique consolidation)
+    } else if (phaseName === 'Peak') {
+        rir = Math.max(0, rir - 1); // Peak: approach failure, express intensity
+    }
+    // Intensification: no modifier — this is the "working zone"
+
     // Set-to-set shaping: first set slightly easier, last set slightly harder
-    if (setNum === 1)
-        rir += 1;
-    else if (setNum === totalSets)
-        rir = Math.max(0, rir - 1);
+    if (setNum === 1 && totalSets > 1) {
+        rir += 0.5; // warm into the work — slight buffer on opener
+    } else if (setNum === totalSets) {
+        rir = Math.max(0, rir - 0.5); // final set can push a little closer
+    }
+
     // Program intent modifiers
     const isMainish = (role === 'main' || role === 'secondary');
     const intent = dayIntent || 'mixed';
+
+    // Strength: main lifts express more intensity in Intensification and Peak
     if (programType === 'Strength' && exType === 'compound' && isMainish) {
-        // Strength should express intensity in peak (without forced grinders for most users)
-        if (phaseName === 'Peak')
-            rir = Math.max(0, rir - 1);
-        if (phaseName === 'Intensification')
-            rir = Math.max(0, rir - 0.5);
+        if (phaseName === 'Peak')           rir = Math.max(0, rir - 1);
+        if (phaseName === 'Intensification') rir = Math.max(0, rir - 0.5);
     }
+
+    // Power/Speed: main compounds always near max effort (Triphasic, APRE)
+    if (programType === 'Power / Speed-Strength' && exType === 'compound' && isMainish) {
+        rir = Math.max(0, rir - 1); // High neural demand, work near max
+    }
+
+    // Powerbuilding: strength day main lifts push intensity; hypertrophy days more conservative
     if (programType === 'Powerbuilding' && exType === 'compound' && isMainish) {
-        if (phaseName === 'Peak' && intent !== 'hypertrophy')
-            rir = Math.max(0, rir - 1);
-        if (intent === 'hypertrophy')
-            rir = Math.min(3, rir + 0.5); // keep technique clean on volume days
+        if (phaseName === 'Peak' && intent !== 'hypertrophy') rir = Math.max(0, rir - 1);
+        if (intent === 'hypertrophy') rir = Math.min(4, rir + 0.5); // technique priority on volume days
     }
-    // Never allow negative RIR
+
+    // Minimalist: always conservative — Dan John "never miss, never struggle"
+    if (programType === 'Minimalist') {
+        rir = Math.max(2, rir + 1); // floor at 2 RIR for minimalist approach
+    }
+
+    // Hard deload floor: never below 3 RIR during deload
+    if (phaseName === 'Deload') rir = Math.max(3, rir);
+
     return Math.max(0, Math.round(rir * 2) / 2); // half-step precision
 }
 // ==================== ADVANCED TECHNIQUE LOGIC ====================
